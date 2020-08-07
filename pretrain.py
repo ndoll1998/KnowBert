@@ -1,4 +1,5 @@
 import torch
+import torch.nn as nn
 import transformers
 # import knowbert model
 from kb.model import KnowBertForPretraining
@@ -15,7 +16,7 @@ def load_data(data_path, batch_size):
     data = torch.load(data_path, map_location='cpu')
     data, caches = data['data'], data['caches']
     # separate data into training and testing dataset
-    train_length = int(0.8 * data[0].size(0))
+    train_length = int(0.9 * data[0].size(0))
     train_data = (t[:train_length] for t in data)
     test_data = (t[train_length:] for t in data)
     # separate caches
@@ -32,7 +33,7 @@ def load_data(data_path, batch_size):
     return train_dataloader, test_dataloader
 
 
-def set_caches(model, cached, device):
+def set_caches(model, cached):
     # get layers wich have a knowledge base added
     kb_layers = [i for i, kb in enumerate(model.kbs) if kb is not None]
     n_kbs = len(kb_layers)
@@ -60,9 +61,10 @@ def predict(model, batch, device):
     data, cached = batch[:4], batch[4:]
     # unpack data and update caches
     input_ids, token_type_ids, next_sentence_labels, masked_labels = data
-    set_caches(model, cached, device)
+    set_caches(model.module if type(model) is nn.DataParallel else model, cached)
     # predict
-    return model.forward(input_ids.to(device), 
+    return model.forward(
+        input_ids=input_ids.to(device), 
         token_type_ids=token_type_ids.to(device), 
         labels=masked_labels.to(device),
         next_sentence_label=next_sentence_labels.to(device)
@@ -71,14 +73,14 @@ def predict(model, batch, device):
 
 if __name__ == '__main__':
 
-    device = 'cpu'
+    main_device = 'cuda:0'
     # base model and data path
     bert_base_model = "bert-base-uncased"
-    data_path = "data/pretraining_data/small_english_yelp_reviews.pkl"
+    data_path = "data/pretraining_data/english_yelp_reviews.pkl"
     dump_path = "data/results/bert-base-uncased"
     # optimizer and data preparation
-    epochs = 5
-    batch_size = 32
+    epochs = 20
+    batch_size = 64
 
     # create dump folder
     os.makedirs(dump_path, exist_ok=True)
@@ -91,9 +93,13 @@ if __name__ == '__main__':
     model = KnowBertForPretraining.from_pretrained(bert_base_model)
     model.add_kb(10, SenticNet(mode="train"))
     # freeze parameters before knowledge base
-    # model.freeze_layers(10)
-    # move model to device
-    model.to(device)
+    model.freeze_layers(10)
+    
+    # if torch.cuda.device_count() > 1:
+        # use all devices
+        # model = nn.DataParallel(model)
+    # use main-device
+    model.to(main_device)
 
 
     print("Creating Optimizer...")
@@ -123,7 +129,7 @@ if __name__ == '__main__':
         # train model
         for i, batch in enumerate(train_dataloader, start=1):
             # predict and get output
-            loss, _, _ = predict(model, batch, device)
+            loss, _, _ = predict(model, batch, main_device)
             # backpropagate and update parameters
             optim.zero_grad()
             loss.backward()
@@ -142,7 +148,7 @@ if __name__ == '__main__':
 
         for batch in test_dataloader:
             # predict
-            loss, mask_lm_scores, next_sentence_scores = predict(model, batch, device)
+            loss, mask_lm_scores, next_sentence_scores = predict(model, batch, main_device)
             running_loss += loss.item()
             # get predictions from scores
             mask_lm_preds = mask_lm_scores.max(dim=-1)[1].cpu().flatten()
@@ -157,10 +163,10 @@ if __name__ == '__main__':
 
             # extend lists
             all_mask_lm_preds.extend(mask_lm_preds.tolist())
-            all_next_sentence_preds.extend(next_sentence_preds.tolist())
             all_mask_lm_targets.extend(mask_lm_targets.tolist())
+            all_next_sentence_preds.extend(next_sentence_preds.tolist())
             all_next_sentence_targets.extend(next_sentence_targets.tolist())
-
+        
         # compute f1-scores
         mask_lm_f1_score = f1_score(all_mask_lm_targets, all_mask_lm_preds, average='micro')
         next_sentence_f1_score = f1_score(all_next_sentence_targets, all_next_sentence_preds)
@@ -173,7 +179,7 @@ if __name__ == '__main__':
         print("\n\tTest-Loss %.4f\t - Mask-LM-F1 %.4f\t - Next-Sent-F1 %.4f" % (test_losses[-1], mask_lm_f1_score, next_sentence_f1_score))
 
         # save model parameters
-        torch.save(mode.state_dict(), os.path.join(dump_path, "model-E%i.pkl" % e))
+        torch.save(model.state_dict(), os.path.join(dump_path, "model-E%i.pkl" % e))
 
     print("Saving results...")
     # save final results
@@ -196,6 +202,6 @@ if __name__ == '__main__':
     ax.set(xlabel="Epoch", ylabel="F1-Scores", title="F1-Scores for Mask-LM and Next-Sentence")
 
     # save model parameters
-    torch.save(mode.state_dict(), os.path.join(dump_path, "model-Final.pkl"))
+    torch.save(model.state_dict(), os.path.join(dump_path, "model-Final.pkl"))
     # save optimizer parameters for further training
     torch.save(optim.state_dict(), os.path.join(dump_path, "optimizer.pkl"))
