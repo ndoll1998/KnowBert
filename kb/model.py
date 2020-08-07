@@ -59,7 +59,7 @@ class KnowBertEncoder(BertEncoder):
         )
 
         # return knowledge base
-        return kb
+        return self.kbs[layer]
 
     def freeze_layers(self, layer:int):
         """ Freeze all parameters up to and including layer.

@@ -91,8 +91,8 @@ if __name__ == '__main__':
     # make sure the order of the knowledge bases is the same when preprocessing the data
     # the exact positions of the kbs can very as long as the order is kept
     model = KnowBertForPretraining.from_pretrained(bert_base_model)
-    model.add_kb(10, SenticNet(mode="train"))
-    # freeze parameters before knowledge base
+    kb = model.add_kb(10, SenticNet(mode="train"))
+    # only compute gradients down to layer 10
     model.freeze_layers(10)
     
     # if torch.cuda.device_count() > 1:
@@ -105,7 +105,8 @@ if __name__ == '__main__':
     print("Creating Optimizer...")
 
     # create optimizer
-    optim = torch.optim.Adam(model.parameters())
+    optim = torch.optim.Adam(kb.parameters())   # only train knowledge base
+    # optim = torch.optim.Adam(model.parameters())  # train all unfrozen parameters
 
 
     print("Loading Data...")
