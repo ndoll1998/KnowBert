@@ -398,12 +398,14 @@ class KAR(nn.Module):
             torch.zeros((self.max_mentions - n_mentions, self.max_candidates)).long() + self.kb.pad_id
         ), dim=0)
         # build and return cache
-        return {
-            'mention_spans': mention_spans.unsqueeze(0),
-            'candidate_ids': all_candidate_ids.unsqueeze(0),
-            'candidate_mask': all_candidate_mask.unsqueeze(0),
-            'candidate_priors': all_candidate_priors.unsqueeze(0)
-        }
+        return ({
+                'mention_spans': mention_spans.unsqueeze(0),
+                'candidate_ids': all_candidate_ids.unsqueeze(0),
+                'candidate_mask': all_candidate_mask.unsqueeze(0),
+                'candidate_priors': all_candidate_priors.unsqueeze(0)
+            }, 
+            list(zip(mention_terms, all_candidate_ids))
+        )
 
     def reset_cache(self):
         # empty cache
@@ -425,7 +427,7 @@ class KAR(nn.Module):
             # stack cache on current cache
             self.cache['mention_spans'] = torch.cat((self.cache['mention_spans'], cache['mention_spans']), dim=0)
             self.cache['candidate_ids'] = torch.cat((self.cache['candidate_ids'], cache['candidate_ids']), dim=0)
-            self.cache['candidate_mask'] = torch.cat((self.cache['candidate_mask'], cache['candidate_mask'].bool()), dim=0) # TODO: converting to bool is not needed
+            self.cache['candidate_mask'] = torch.cat((self.cache['candidate_mask'], cache['candidate_mask']), dim=0)
             self.cache['candidate_priors'] = torch.cat((self.cache['candidate_priors'], cache['candidate_priors']), dim=0)
         
 
@@ -461,4 +463,4 @@ class KAR(nn.Module):
         self.reset_cache()
 
         # return new hidden state
-        return h_new
+        return h_new, linking_scores

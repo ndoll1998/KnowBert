@@ -97,19 +97,28 @@ class KnowBertEncoder(BertEncoder):
 
     def prepare_kbs(self, batch_tokens:list):
         """ prepare all knowledge bases for next forward pass.
-            Basically computes and sets all caches for the given batch
+            Basically computes and sets all caches for the given batch.
+
+            Returns a list of mention-candidates dicts for each layer and each token-sequence
+
+            return = ([dict, ..., dict], ..., [dict, ..., dict])
         """
         # reset and set caches
         self.reset_kb_caches()
-        self.stack_kb_caches(*[self.get_kb_caches(tokens) for tokens in batch_tokens])
+        caches, candidates = zip(*[self.get_kb_caches(tokens) for tokens in batch_tokens])
+        self.stack_kb_caches(*caches)
+        # return all candidates
+        return candidates
 
     def get_kb_caches(self, tokens:list):
         """ Get cache for each knowledge base from tokens.
-            Return a list of caches, one for each knowledge base and None for layers without one 
+            Return a list of caches, one for each knowledge base and None for layers without one.
+            Also returns a mention-candidates dict for each layer.
 
-            return = [cache, ..., cache]
+            return = [cache, ..., cache], [dict, ..., dict]
         """        
-        return [kb.get_cache(tokens) if kb is not None else None for kb in self.kbs]
+        caches, candidates = zip(*[kb.get_cache(tokens) if kb is not None else (None, None) for kb in self.kbs])
+        return caches, candidates
 
     def stack_kb_caches(self, *all_caches):
         """ Stack multiple caches for each knowledge base. 
@@ -135,11 +144,13 @@ class KnowBertEncoder(BertEncoder):
         encoder_attention_mask=None,
         output_attentions=False,
         output_hidden_states=False,
+        output_linking_scores=True,
         return_dict=False
     ):
         # prepare outputs
         all_hidden_states = () if output_hidden_states else None
         all_attentions = () if output_attentions else None
+        all_linking_scores = () if output_linking_scores else None
 
         # pass through each layer
         for i, layer_module in enumerate(self.layer):
@@ -184,15 +195,23 @@ class KnowBertEncoder(BertEncoder):
 
             # apply knowledge base for layer if there is one
             if self.kbs[i] is not None:
-                hidden_states = self.kbs[i].forward(hidden_states)
+                hidden_states, linking_scores = self.kbs[i].forward(hidden_states)
+                # add linking scores to tuple
+                if output_linking_scores:
+                    all_linking_scores = all_linking_scores + (linking_scores,)
 
-        # add very last hidden state to list
+            # add None to linking scores tuple
+            elif output_linking_scores:
+                all_linking_scores = all_linking_scores + (None,)
+
+
+        # add very last hidden state to tuple
         if output_hidden_states:
             all_hidden_states = all_hidden_states + (hidden_states,)
 
         # return tuple
         if not return_dict:
-            return tuple(v for v in [hidden_states, all_hidden_states, all_attentions] if v is not None)
+            return tuple(v for v in [hidden_states, all_hidden_states, all_attentions, all_linking_scores] if v is not None)
         # return dict/output-class
         return BaseModelOutput(
             last_hidden_state=hidden_states, 

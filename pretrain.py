@@ -7,16 +7,32 @@ from kb.model import KnowBertForPretraining
 from senticnet.kb import SenticNet
 # utils
 import os
+import glob
 from time import time
 from matplotlib import pyplot as plt
 from sklearn.metrics import f1_score
 
 def load_data(data_path, batch_size):
-    # load data
-    data = torch.load(data_path, map_location='cpu')
-    data, caches = data['data'], data['caches']
-    # separate data into training and testing dataset
+    
+    data_tensors, cache_tensors = [], []
+    # load all data files
+    for fpath in glob.glob(data_path):
+        # load current file
+        data = torch.load(fpath, map_location='cpu')
+        data, caches = data['data'], data['caches']
+        data_tensors.append(data)
+        cache_tensors.append(caches)
+        # log
+        print("Loaded %i items from %s" % (data[0].size(0), fpath))
+
+    # concatenate all tensors from the different files
+    data = [torch.cat(tensors, dim=0) for tensors in zip(*data_tensors)]
+    caches = [[torch.cat(tensors, dim=0) for tensors in zip(*caches)] for caches in zip(*cache_tensors)]
+    # training data portion
     train_length = int(0.9 * data[0].size(0))
+    print("Using %i out of %i items for training" % (train_length, data[0].size(0)))
+
+    # separating data into training and testing data
     train_data = (t[:train_length] for t in data)
     test_data = (t[train_length:] for t in data)
     # separate caches
@@ -76,8 +92,8 @@ if __name__ == '__main__':
     main_device = 'cuda:0'
     # base model and data path
     bert_base_model = "bert-base-uncased"
-    data_path = "data/pretraining_data/english_yelp_reviews.pkl"
-    dump_path = "data/results/bert-base-uncased"
+    data_path = "data/pretraining_data/english_yelp_reviews_chunk_*.pkl"
+    dump_path = "data/results/bert-base-uncased-all-chucks"
     # optimizer and data preparation
     epochs = 20
     batch_size = 64
@@ -105,8 +121,8 @@ if __name__ == '__main__':
     print("Creating Optimizer...")
 
     # create optimizer
-    optim = torch.optim.Adam(kb.parameters())   # only train knowledge base
-    # optim = torch.optim.Adam(model.parameters())  # train all unfrozen parameters
+    # optim = torch.optim.Adam(kb.parameters())   # only train knowledge base
+    optim = torch.optim.Adam(model.parameters())  # train all unfrozen parameters
 
 
     print("Loading Data...")

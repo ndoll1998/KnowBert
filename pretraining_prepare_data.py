@@ -194,8 +194,8 @@ if __name__ == '__main__':
     from senticnet.kb import SenticNet
 
     bert_base_model = "bert-base-uncased"
-    source_file_path = "data/pretraining_data/small_english_yelp_reviews.txt"
-    output_file_path = "data/pretraining_data/small_english_yelp_reviews.pkl"
+    source_file_path = "data/pretraining_data/english_yelp_reviews_chunk_2.txt"
+    output_file_path = "data/pretraining_data/english_yelp_reviews_chunk_2.pkl"
 
     kwargs = {
         'max_seq_length': 128,

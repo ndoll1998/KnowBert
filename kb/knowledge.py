@@ -31,3 +31,7 @@ class KnowledgeBase(ABC):
     def get_prior(self, entity_id):
         """ get prior probability of the given entity """
         raise NotImplementedError()
+
+    def id2entity(self, entity_id):
+        """ (Optional) get the entity term from it's id """
+        raise NotImplementedError()

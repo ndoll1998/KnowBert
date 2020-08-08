@@ -74,6 +74,12 @@ class SenticNet(KnowledgeBase):
         # get text of semantics and return
         return [node.index] + semantics
 
+    def get_prior(self, embedd_id):
+        return 1
+
+    def id2entity(self, entity_id):
+        return self.embedder.id2word[entity_id]
+
     def embedd(self, node_ids):
         # get concepts from node-ids
         flat_node_ids = node_ids.flatten().tolist()
