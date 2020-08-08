@@ -8,7 +8,6 @@ class Embedding(object):
 
         self.pad_id = pad_id
         self.word2id = {}
-        self.id2word = [None]
         # save first position for padding tensor
         # the padding tensor will not be trained or anything since its just a fill vector
         tensors = [torch.zeros(embedd_dim)]
@@ -22,7 +21,6 @@ class Embedding(object):
                 tensor = torch.tensor([float(v) for v in tensor])
                 # update
                 self.word2id[word] = len(tensors)
-                self.id2word.append(word)
                 tensors.append(tensor)
                 # check embedding dimension
                 assert tensors[-1].size(0) == embedd_dim
