@@ -3,19 +3,28 @@ import numpy as np
 # import pytorch
 import torch
 import torch.nn as nn
+# utils
+from collections import OrderedDict
 
 class Embedding(object):
 
-    def __init__(self, embedd_dim, pad_id):
+    def __init__(self, embedd_dim, pad_id=None):
         # save parameters
         self.pad_id, self.embedd_dim = pad_id, embedd_dim
         # word2id map and embedding
         self.word2id = None
         self.embedding:nn.Embedding = None
 
+    def embedd(self, ids):
+        # make sure embedding is loaded before execution
+        assert self.embedding is not None
+        # set all padding ids
+        ids[ids == self.pad_id] = 0
+        return self.embedding(ids)
+
     def load_csv(self, fpath):
         # clear word2id map
-        self.word2id = {}
+        self.word2id = OrderedDict()
         # save first position for padding tensor
         # the padding tensor will not be trained or anything since its just a fill vector
         tensors = [torch.zeros(self.embedd_dim)]
@@ -39,10 +48,9 @@ class Embedding(object):
             _weight=torch.stack(tensors, dim=0)
         )
 
-
     def load(self, words_file, embedd_file):
         # clear word2id map
-        self.word2id = {}
+        self.word2id = OrderedDict()
         # load word-to-id map
         with open(words_file, "r") as f:
             # start enumerating at 1 to skip padding embedding at position 0
@@ -59,77 +67,82 @@ class Embedding(object):
             _weight=weight
         )
 
-    def embedd(self, ids):
-        # make sure embedding is loaded before execution
-        assert self.embedding is not None
-        # set all padding ids
-        ids[ids == self.pad_id] = 0
-        return self.embedding(ids)
+    def train_embedding(self, g, model="SimplE"):
+        # pykeen
+        from pykeen.pipeline import pipeline
+        from pykeen.triples import TriplesFactory
 
+        # create pseudo-nodes to enucode node attributes
+        pleasent, not_pleasent = len(g.concepts), len(g.concepts) + 1
+        sensitiv, not_sensitive = len(g.concepts) + 2, len(g.concepts) + 3
+        # build triples
+        triples = []
+        for c in g.concepts:
+            # actual connections
+            triples.extend(([c.index, 'semantic', j] for j in g.get_semantic_ids(c)))
+            # encode attributes by binning
+            if c.pleasentness != 0:
+                triples.append([c.index, 'pleasent', pleasent if c.pleasentness > 0 else not_pleasent])
+            if c.sensitivity != 0:
+                triples.append([c.index, 'sensitiv', sensitiv if c.sensitivity > 0 else not_sensitive])
+        triples, n = np.asarray(triples), len(triples)
+        print("Number of Triples (Train/Total): %i/%i" % (int(0.8 * n), n))
+        # create mask for training and testing separation
+        train_mask = np.full(n, False)
+        train_mask[:int(n * 0.8)] = True
+        np.random.shuffle(train_mask)
+        # separate into training and testing
+        train_triples = triples[train_mask]
+        test_triples = triples[~train_mask]
+        # create triples factories
+        train_factory = TriplesFactory(triples=train_triples)
+        test_factory = TriplesFactory(triples=test_triples)
+        # create and run pipeline
+        results = pipeline(
+            # data
+            training_triples_factory=train_factory,
+            testing_triples_factory=test_factory,
+            # model
+            model=model,
+            model_kwargs={
+                "embedding_dim": self.embedd_dim,
+                "automatic_memory_optimization": True
+            }
+        )
+        # update word2id
+        words = [c.text for c in g.concepts]
+        self.word2id = OrderedDict( zip(words, range(1, len(words) + 1)) )  # 0th element is padding
+        # update embeddings - add padding embedding at position 0
+        self.embedding = nn.Embedding(
+            num_embeddings=len(words) + 1,
+            embedding_dim=self.embedd_dim,
+            _weight=torch.cat((
+                torch.zeros((1, self.embedd_dim)), 
+                results.model.entity_embeddings.weight
+            ), dim=0)
+        )
+        # return results
+        return results
 
-def train_embedding(fpath, dump_path, model="SimplE"):
-    # imports
-    from graph import SenticNetGraph
-    from pykeen.pipeline import pipeline
-    from pykeen.triples import TriplesFactory
-
-    # load graph
-    g = SenticNetGraph(fpath)
-    # create pseudo-nodes to enucode node attributes
-    pleasent, not_pleasent = len(g.concepts), len(g.concepts) + 1
-    sensitiv, not_sensitive = len(g.concepts) + 2, len(g.concepts) + 3
-    # build triples
-    triples = []
-    for c in g.concepts:
-        # actual connections
-        triples.extend(([c.index, 'semantic', j] for j in g.get_semantic_ids(c)))
-        # encode attributes by binning
-        if c.pleasentness != 0:
-            triples.append([c.index, 'pleasent', pleasent if c.pleasentness > 0 else not_pleasent])
-        if c.sensitivity != 0:
-            triples.append([c.index, 'sensitiv', sensitiv if c.sensitivity > 0 else not_sensitive])
-    # triples = triples[:100]
-    triples, n = np.asarray(triples), len(triples)
-    print("Number of Triples (Train/Total): %i/%i" % (int(0.8 * n), n))
-    # create mask for training and testing separation
-    train_mask = np.full(n, False)
-    train_mask[:int(n * 0.8)] = True
-    np.random.shuffle(train_mask)
-    # separate into training and testing
-    train_triples = triples[train_mask]
-    test_triples = triples[~train_mask]
-    # create triples factories
-    train_factory = TriplesFactory(triples=train_triples)
-    test_factory = TriplesFactory(triples=test_triples)
-    # create and run pipeline
-    print("Training Embedding...")
-    results = pipeline(
-        # data
-        training_triples_factory=train_factory,
-        testing_triples_factory=test_factory,
-        # model
-        model=model
-    )
-    print("Saving Embeddings...")
-    # save entity and relation embeddings
-    torch.save(results.model.entity_embeddings.weight, os.path.join(dump_path, "entities.bin"))
-    torch.save(results.model.relation_embeddings.weight, os.path.join(dump_path, "relations.bin"))
-    # save words in order matching the embeddings
-    with open(os.path.join(dump_path, "entities.txt"), "w+", encoding='utf-8') as f:
-        f.write('\n'.join([c.text for c in g.concepts]))
-    # done with all
-    print("Saved Embeddings to %s!" % dump_path)
+    def save(self, dump_path):
+        # save entity and relation embeddings without padding embedding
+        torch.save(self.embedding.weight[1:, ...], os.path.join(dump_path, "entities.bin"))
+        # save words in order matching the embeddings
+        with open(os.path.join(dump_path, "entities.txt"), "w+", encoding='utf-8') as f:
+            f.write('\n'.join(self.word2id.keys()))
 
 if __name__ == '__main__':
+    # import graph
+    from graph import SenticNetGraph
+
+    # load graph
+    graph = SenticNetGraph("../data/senticnet/german/senticnet_de.rdf.xml")
     # train a knowledge graph embedding for senticnet graph
-    train_embedding(
-        "../data/senticnet/german/senticnet_de.rdf.xml", 
-        "../data/senticnet/german/"
-    )
-    print("\nTrying to load new embedding...")
-    e = Embedding(embedd_dim=200, pad_id=0)
-    e.load(
-        "../data/senticnet/german/entities.txt",
-        "../data/senticnet/german/entities.bin"
-    )
-    print("Everything worked as intended!")
+    embedding = Embedding(embedd_dim=200, model="SimplE")
+
+    print("Training Embedding...")
+    embedding.train_embedding(graph)
+
+    print("Saving Embedding...")
+    embedding.save("../data/senticnet/german")
+
