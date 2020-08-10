@@ -187,6 +187,8 @@ def create_masked_lm_predictions(tokens, masked_lm_prob, max_predictions_per_seq
 
 if __name__ == '__main__':
 
+    import os
+    from glob import glob
     # import model and tokenizer
     from kb.model import KnowBert, BertConfig
     from transformers import BertTokenizer
@@ -194,8 +196,8 @@ if __name__ == '__main__':
     from senticnet.kb import SenticNet
 
     bert_base_model = "bert-base-uncased"
-    source_file_path = "data/pretraining_data/english_yelp_reviews_chunk_*.txt"
-    output_file_path = "data/pretraining_data/english_yelp_reviews_chunk_*.pkl"
+    source_file_path = "data/pretraining_data/german_yelp/txt/*.txt"
+    output_path = "data/pretraining_data/"
 
     kwargs = {
         'max_seq_length': 128,
@@ -209,52 +211,57 @@ if __name__ == '__main__':
     config = BertConfig.from_pretrained(bert_base_model)
     model = KnowBert(config)
     # add knowledge bases
-    model.add_kb(10, SenticNet(data_path='./data/senticnet/english', mode='prepare'))
+    model.add_kb(10, SenticNet(data_path='./data/senticnet/german', mode='prepare'))
 
     # create tokenizer
     tokenizer = BertTokenizer.from_pretrained(bert_base_model)
     tokenize = lambda text: tokenizer.tokenize(text.strip())
 
-    print("Reading and Tokenizing Documents...")
+    for fpath in glob(source_file_path):
 
-    # read documents from file
-    with open(source_file_path, 'r', encoding='utf-8') as f:
-        documents = f.read().split('\n\n')
-        documents = [[tokenize(sent) for sent in doc.strip().split('\n')] for doc in documents if len(doc.strip()) > 0]
-    # shuffle documents
-    random.shuffle(documents)
+        print("Reading and Tokenizing Documents...(%s)" % fpath)
 
-    print("Preprocessing Documents...")
+        # read documents from file
+        with open(fpath, 'r', encoding='utf-8') as f:
+            documents = f.read().split('\n\n')
+            documents = [[tokenize(sent) for sent in doc.strip().split('\n')] for doc in documents if len(doc.strip()) > 0]
+        # shuffle documents
+        random.shuffle(documents)
 
-    full_caches = [([], [], [], []) for _ in [kb for kb in model.kbs if kb is not None]]
-    is_random_nexts, token_ids, segment_ids, masked_labels = [], [], [], []
-    # create training data from each document separately
-    for i in tqdm(range(len(documents))):
-        outputs, caches = create_training_data(i, documents, model, tokenizer, **kwargs)
-        # update lists
-        is_random_nexts.extend(outputs[0])
-        token_ids.extend(outputs[1])
-        segment_ids.extend(outputs[2])
-        masked_labels.extend(outputs[3])
-        # unpack caches
-        for i, cache in enumerate(caches):
-            full_caches[i][0].extend(cache[0])
-            full_caches[i][1].extend(cache[1])
-            full_caches[i][2].extend(cache[2])
-            full_caches[i][3].extend(cache[3])
+        print("Preprocessing Documents...")
 
-    print("Saving Preprocessed Data...")
+        full_caches = [([], [], [], []) for _ in [kb for kb in model.kbs if kb is not None]]
+        is_random_nexts, token_ids, segment_ids, masked_labels = [], [], [], []
+        # create training data from each document separately
+        for i in tqdm(range(len(documents))):
+            outputs, caches = create_training_data(i, documents, model, tokenizer, **kwargs)
+           # update lists
+            is_random_nexts.extend(outputs[0])
+            token_ids.extend(outputs[1])
+            segment_ids.extend(outputs[2])
+            masked_labels.extend(outputs[3])
+            # unpack caches
+            for i, cache in enumerate(caches):
+                full_caches[i][0].extend(cache[0])
+                full_caches[i][1].extend(cache[1])
+                full_caches[i][2].extend(cache[2])
+                full_caches[i][3].extend(cache[3])
 
-    # stack tensors    
-    data = (
-        torch.stack(token_ids, dim=0), 
-        torch.stack(segment_ids, dim=0),
-        torch.tensor(is_random_nexts).long(), 
-        torch.stack(masked_labels, dim=0)
-    )
-    # stack cached tensors
-    full_caches = [[torch.cat(cached, dim=0) for cached in cache] for cache in full_caches]
+        print("Saving Preprocessed Data...")
 
-    # save tensors to output-file
-    torch.save({'data': data, 'caches': full_caches}, output_file_path)
-    print("Saved Training Data to %s" % output_file_path)
+        # stack tensors    
+        data = (
+            torch.stack(token_ids, dim=0), 
+            torch.stack(segment_ids, dim=0),
+            torch.tensor(is_random_nexts).long(), 
+            torch.stack(masked_labels, dim=0)
+        )
+        # stack cached tensors
+        full_caches = [[torch.cat(cached, dim=0) for cached in cache] for cache in full_caches]
+
+        # build output file path
+        _, fname = os.path.split(fpath)
+        output_fpath = os.path.join(output_path, fname.replace('.txt', '.pkl'))
+        # save tensors to output-file
+        torch.save({'data': data, 'caches': full_caches}, output_fpath)
+        print("Saved Training Data to %s" % output_fpath)
