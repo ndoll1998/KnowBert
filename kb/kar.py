@@ -8,6 +8,7 @@ from transformers.modeling_bert import BertLayerNorm, BertEncoder, BertSelfOutpu
 # import utils
 import math
 from .utils import (
+    match_shape_2d,
     pseudo_inverse, 
     init_bert_weights,
     bert_extended_attention_mask
@@ -309,9 +310,9 @@ class KAR(nn.Module):
         bert_config:BertConfig, 
         span_encoder_config:BertConfig, 
         span_attention_config:BertConfig,
-        max_mentions:int =10, 
-        max_mention_span:int =5,
-        max_candidates:int =10,
+        max_mentions:int, 
+        max_mention_span:int,
+        max_candidates:int,
         threshold:float =None, 
     ):
         # initialize super
@@ -322,8 +323,8 @@ class KAR(nn.Module):
         self.max_candidates = max_candidates
         # save knowledge base and create caches-list
         self.kb = kb
-        self.caches = None
-        self.reset_cache()
+        self.cache = None
+        self.clear_cache()
         # projections from bert to kb and reversed
         self.bert2kb = nn.Linear(bert_config.hidden_size, kb.embedd_dim)
         self.kb2bert = nn.Linear(kb.embedd_dim, bert_config.hidden_size)
@@ -357,87 +358,58 @@ class KAR(nn.Module):
             self.kb2bert.weight.data.copy_(w_inv)
             self.kb2bert.bias.data.copy_(b_inv)
 
-    def get_cache(self, tokens):
+    def get_cache_and_mention_candidates(self, tokens):
         # get mentions and mention spans
         mentions = self.kb.find_mentions(tokens)
         mention_terms, mention_spans = zip(*mentions.items()) if len(mentions) > 0 else ([], [])
         mention_terms, mention_spans = mention_terms[:self.max_mentions], mention_spans[:self.max_mentions]
         n_mentions = len(mention_terms)
-        # extend spans and convert to tensor
-        mention_spans = torch.cat((
-            torch.tensor([
-                span[:self.max_mention_span] + [-1] * (self.max_mention_span - min(self.max_mention_span, len(span))) 
-                for span in mention_spans
-            ]).long(),
-            -torch.ones((self.max_mentions - n_mentions, self.max_mention_span)).long()
-        ), dim=0)
-        # get candidate entity-ids for each found mention
-        all_candidate_ids = [self.kb.find_candidates(m)[:self.max_candidates] for m in mention_terms]
-        # build candidate-mask
-        all_candidate_mask = torch.cat((
-            torch.tensor([
-                [True] * len(candidate_ids) + [False] * (self.max_candidates - len(candidate_ids)) 
-                for candidate_ids in all_candidate_ids
-            ]).bool(),
-            torch.zeros((self.max_mentions - n_mentions, self.max_candidates)).bool()
-        ), dim=0)
-        # build candidate-prior probabilities
-        all_candidate_priors = torch.cat((
-            torch.tensor([
-                [self.kb.get_prior(entity) for entity in candidate_ids] + [0] * (self.max_candidates - len(candidate_ids)) 
-                for candidate_ids in all_candidate_ids
-            ]).float(),
-            torch.zeros((self.max_mentions - n_mentions, self.max_candidates)).float()
-        ), dim=0)
-        # extend candidates to match the specified dimensions
-        all_candidate_ids = torch.cat((
-            torch.tensor([
-                candidate_ids + [self.kb.pad_id] * (self.max_candidates - len(candidate_ids))
-                for candidate_ids in all_candidate_ids
-            ]).long(),
-            torch.zeros((self.max_mentions - n_mentions, self.max_candidates)).long() + self.kb.pad_id
-        ), dim=0)
-        # build and return cache
-        return ({
-                'mention_spans': mention_spans.unsqueeze(0),
-                'candidate_ids': all_candidate_ids.unsqueeze(0),
-                'candidate_mask': all_candidate_mask.unsqueeze(0),
-                'candidate_priors': all_candidate_priors.unsqueeze(0)
-            }, 
-            list(zip(mention_terms, all_candidate_ids))
-        )
 
-    def reset_cache(self):
+        # max-size for dimension 1
+        shape = (self.max_mentions, max(self.max_mention_span, self.max_candidates))
+        # build mention-spans tensor
+        mention_spans = match_shape_2d(mention_spans, shape, -1).long()
+        # get candidate entity-ids for each found mention
+        all_candidate_ids = [self.kb.find_candidates(m) for m in mention_terms]
+        all_candidate_mask = [[1] * len(ids) for ids in all_candidate_ids]
+        all_candidate_priors = [[self.kb.get_prior(i) for i in ids] for ids in all_candidate_ids]
+        # match shape
+        all_candidate_ids = match_shape_2d(all_candidate_ids, shape, self.kb.pad_id)
+        all_candidate_mask = match_shape_2d(all_candidate_mask, shape, 0)
+        all_candidate_priors = match_shape_2d(all_candidate_priors, shape, 0)
+
+        # build mention-candidate map
+        mention_candidate_map = list(zip(mention_terms, all_candidate_ids))
+        # stack all tensors to build cache
+        tensors = (mention_spans.float(), all_candidate_ids.float(), all_candidate_mask.float(), all_candidate_priors.float())
+        cache = torch.stack(tensors, dim=0).unsqueeze(0)
+        # return cache and mention-candidate-map
+        return cache, mention_candidate_map
+
+    def clear_cache(self):
         # empty cache
-        self.cache = {
-            'mention_spans': torch.empty((0, self.max_mentions, self.max_mention_span)).long(),
-            'candidate_ids': torch.empty((0, self.max_mentions, self.max_candidates)).long(),
-            'candidate_mask': torch.empty((0, self.max_mentions, self.max_candidates)).bool(),
-            'candidate_priors': torch.empty((0, self.max_mentions, self.max_candidates)).float(),
-        }
+        self.cache = torch.empty((0, 4, self.max_mentions, max(self.max_mention_span, self.max_candidates)))
 
     def stack_caches(self, *caches):
-
-        for cache in caches:
-            # check if cache define all necessary keys
-            for key in self.cache.keys():
-                    if key not in cache:
-                        raise RuntimeError("Cache for %s is missing <%s>" % (self.kb.__class__.__name__, key))
-
-            # stack cache on current cache
-            self.cache['mention_spans'] = torch.cat((self.cache['mention_spans'], cache['mention_spans']), dim=0)
-            self.cache['candidate_ids'] = torch.cat((self.cache['candidate_ids'], cache['candidate_ids']), dim=0)
-            self.cache['candidate_mask'] = torch.cat((self.cache['candidate_mask'], cache['candidate_mask']), dim=0)
-            self.cache['candidate_priors'] = torch.cat((self.cache['candidate_priors'], cache['candidate_priors']), dim=0)
+        # stack all given caches on current cache
+        self.cache = torch.cat((self.cache, *caches), dim=0)
         
+    def read_cache(self):
+        # read values from cache and convert to correct types
+        mention_spans = self.cache[:, 0, :, :self.max_mention_span].long()
+        candidate_ids = self.cache[:, 1, :, :].long()
+        candidate_mask = self.cache[:, 2, :, :].bool()
+        candidate_priors = self.cache[:, 3, :, :].float()
+        # clear cache after reading to prevent 
+        # false double use of the same cache
+        self.clear_cache()
+        # return values
+        return mention_spans, candidate_ids, candidate_mask, candidate_priors
 
     def forward(self, h):
         
         # read cache
-        mention_spans = self.cache['mention_spans'].to(h.device)
-        candidate_ids = self.cache['candidate_ids'].to(h.device)
-        candidate_mask = self.cache['candidate_mask'].to(h.device)
-        candidate_priors = self.cache['candidate_priors'].to(h.device)
+        mention_spans, candidate_ids, candidate_mask, candidate_priors = self.read_cache()
         # check cache values
         if (len(mention_spans) != h.size(0)) or (candidate_ids.size(0) != h.size(0)) \
                 or (candidate_mask.size(0) != h.size(0)) or (candidate_priors.size(0) != h.size(0)):
@@ -457,10 +429,6 @@ class KAR(nn.Module):
         # project from knowledge-base back to bert
         h_new = self.dropout(self.kb2bert(recontextualized_reprs))
         h_new = self.output_ln(h + h_new)
-
-        # reset cache after execution to prevent 
-        # false double use of the same cache
-        self.reset_cache()
 
         # return new hidden state
         return h_new, linking_scores

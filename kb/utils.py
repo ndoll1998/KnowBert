@@ -8,6 +8,18 @@ from transformers.modeling_bert import (
     BertIntermediate, BertLayerNorm
 )
 
+def match_shape_2d(ls:list, shape_2d:tuple, fill_value=0):
+    # only support two dimensional target tensors
+    assert len(shape_2d) == 2
+    dim1, dim2 = shape_2d
+    # pad all existing elements to match dim2
+    tensor = [l[:dim2] + [fill_value] * (dim2 - min(dim2, len(l))) for l in ls[:dim1]]
+    tensor = torch.tensor(tensor)
+    # pad to match dim1
+    return torch.cat((
+        tensor, torch.zeros(dim1 - min(dim1, len(ls)), dim2).type(tensor.dtype)
+    ), dim=0)
+
 def bert_extended_attention_mask(mask):
     # mask = (batch_size, timesteps)
     # returns an attention_mask useable with BERT

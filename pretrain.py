@@ -14,20 +14,21 @@ from sklearn.metrics import f1_score
 
 def load_data(data_path, batch_size):
     
-    data_tensors, cache_tensors = [], []
+    data_tensors, all_caches = [], []
     # load all data files
     for fpath in glob.glob(data_path):
         # load current file
         data = torch.load(fpath, map_location='cpu')
         data, caches = data['data'], data['caches']
         data_tensors.append(data)
-        cache_tensors.append(caches)
+        all_caches.append(caches)
         # log
         print("Loaded %i items from %s" % (data[0].size(0), fpath))
 
     # concatenate all tensors from the different files
     data = [torch.cat(tensors, dim=0) for tensors in zip(*data_tensors)]
-    caches = [[torch.cat(tensors, dim=0) for tensors in zip(*caches)] for caches in zip(*cache_tensors)]
+    caches = [torch.cat(caches, dim=0) for caches in zip(*all_caches)]
+
     # training data portion
     train_length = int(0.9 * data[0].size(0))
     print("Using %i out of %i items for training" % (train_length, data[0].size(0)))
@@ -36,48 +37,32 @@ def load_data(data_path, batch_size):
     train_data = (t[:train_length] for t in data)
     test_data = (t[train_length:] for t in data)
     # separate caches
-    train_caches = [[cached[:train_length, ...] for cached in cache] for cache in caches]
-    test_caches = [[cached[train_length:, ...] for cached in cache] for cache in caches]
+    train_caches = [cache[:train_length] for cache in caches]
+    test_caches = [cache[train_length:] for cache in caches]
 
     # create datasets
-    train_dataset = torch.utils.data.TensorDataset(*train_data, *sum(train_caches, []))
-    test_dataset = torch.utils.data.TensorDataset(*test_data, *sum(test_caches, []))
+    train_dataset = torch.utils.data.TensorDataset(*train_data, *train_caches)
+    test_dataset = torch.utils.data.TensorDataset(*test_data, *test_caches)
     # create dataloaders
     train_dataloader = torch.utils.data.DataLoader(train_dataset, shuffle=True, batch_size=batch_size)
     test_dataloader = torch.utils.data.DataLoader(test_dataset)
 
     return train_dataloader, test_dataloader
 
-
-def set_caches(model, cached):
-    # get layers wich have a knowledge base added
-    kb_layers = [i for i, kb in enumerate(model.kbs) if kb is not None]
-    n_kbs = len(kb_layers)
-
-    # create caches
-    only_valid_caches = [{
-            'mention_spans': cached[i + 0],
-            'candidate_ids': cached[i + 1],
-            'candidate_mask': cached[i + 2],
-            'candidate_priors': cached[i + 3]
-        } for i in range(0, n_kbs * 4, 4)
-    ]
-    # expand caches - add Nones
-    caches = [None] * len(model.kbs)
-    for l, cache in zip(kb_layers, only_valid_caches):
-        caches[l] = cache
-    
-    # set caches
-    model.reset_kb_caches()
-    model.stack_kb_caches(caches)
-
+def set_caches(model, caches):
+    model.clear_kb_caches()
+    # remove Nonetypes from knowledge-bases
+    kbs = [kb for kb in model.kbs if kb is not None]
+    # set cache of each knowledge base manually
+    for kb, cache in zip(kbs, caches):
+        kb.stack_caches(cache)
 
 def predict(model, batch, device):
     # separate data and cached
-    data, cached = batch[:4], batch[4:]
+    data, caches = batch[:4], batch[4:]
     # unpack data and update caches
     input_ids, token_type_ids, next_sentence_labels, masked_labels = data
-    set_caches(model, cached)
+    set_caches(model, caches)
     # predict
     return model.forward(
         input_ids=input_ids.to(device), 
@@ -89,14 +74,14 @@ def predict(model, batch, device):
 
 if __name__ == '__main__':
 
-    main_device = 'cuda:0'
+    main_device = 'cpu'
     # base model and data path
     bert_base_model = "bert-base-uncased"
-    data_path = "data/pretraining_data/english_yelp_reviews_chunk_*.pkl"
+    data_path = "data/pretraining_data/small_english_yelp_reviews.pkl"
     dump_path = "data/results/bert-base-uncased"
     # optimizer and data preparation
-    epochs = 20
-    batch_size = 64
+    epochs = 1
+    batch_size = 1
 
     # create dump folder
     os.makedirs(dump_path, exist_ok=True)
@@ -141,7 +126,7 @@ if __name__ == '__main__':
         # train model
         for i, batch in enumerate(train_dataloader, start=1):
             # predict and get output
-            loss, _, _ = predict(model, batch, main_device)
+            loss, _, _, _ = predict(model, batch, main_device)
             # backpropagate and update parameters
             optim.zero_grad()
             loss.backward()
@@ -161,7 +146,7 @@ if __name__ == '__main__':
         with torch.no_grad():
             for batch in test_dataloader:
                 # predict
-                loss, mask_lm_scores, next_sentence_scores = predict(model, batch, main_device)
+                loss, mask_lm_scores, next_sentence_scores, _ = predict(model, batch, main_device)
                 running_loss += loss.item()
                 # get predictions from scores
                 mask_lm_preds = mask_lm_scores.max(dim=-1)[1].cpu().flatten()

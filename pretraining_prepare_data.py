@@ -29,8 +29,6 @@ def create_training_data(
 ):
     # get tokenizer vocab
     vocab = list(tokenizer.vocab.keys())
-    # get know-bert kb mask
-    knowbert_kb_mask = [kb is not None for kb in knowbert_model.kbs]
 
     # get current document
     doc = all_documents[doc_id]
@@ -44,8 +42,6 @@ def create_training_data(
     all_segment_ids = []
     all_random_nexts = []
     all_masked_lm_labels = []
-    # all cache values for all knowledge bases
-    all_kb_caches = [([], [], [], []) for _ in range(sum(knowbert_kb_mask))]
 
     i = 0
     current_chunk = []
@@ -101,15 +97,8 @@ def create_training_data(
             tokens = ["[CLS]"] + tokens_a + ["[SEP]"] + tokens_b + ["[SEP]"]
             segment_ids = [0] * (len(tokens_a) + 2) + [1] * (len(tokens_b) + 1)
 
-            # create all kb-caches
-            kb_caches = knowbert_model.get_kb_caches(tokens)
-            kb_caches = [cache for cache, valid in zip(kb_caches, knowbert_kb_mask) if valid]
-            # add to lists
-            for cache, target_cache in zip(kb_caches, all_kb_caches):
-                target_cache[0].append(cache['mention_spans'])
-                target_cache[1].append(cache['candidate_ids'])
-                target_cache[2].append(cache['candidate_mask'])
-                target_cache[3].append(cache['candidate_priors'])
+            # create and stack all kb-caches for current tokens
+            knowbert_model.stack_kb_caches(knowbert_model.build_kb_caches(tokens))
 
             # create masked lm data
             masked_tokens, masked_idx, masked_targets = create_masked_lm_predictions(tokens, masked_lm_prob, max_predictions_per_seq, vocab, whole_word_mask)
@@ -137,7 +126,8 @@ def create_training_data(
         # increase counter
         i += 1
 
-    return (all_random_nexts, all_token_ids, all_segment_ids, all_masked_lm_labels), all_kb_caches
+    # return everything
+    return all_random_nexts, all_token_ids, all_segment_ids, all_masked_lm_labels
 
 def create_masked_lm_predictions(tokens, masked_lm_prob, max_predictions_per_seq, vocab, whole_word_mask):
 
@@ -196,7 +186,7 @@ if __name__ == '__main__':
     from senticnet.kb import SenticNet
 
     bert_base_model = "bert-base-uncased"
-    source_file_path = "data/pretraining_data/german_yelp/txt/*.txt"
+    source_file_path = "data/pretraining_data/english_yelp/txt/small_*.txt"
     output_path = "data/pretraining_data/"
 
     kwargs = {
@@ -211,7 +201,7 @@ if __name__ == '__main__':
     config = BertConfig.from_pretrained(bert_base_model)
     model = KnowBert(config)
     # add knowledge bases
-    model.add_kb(10, SenticNet(data_path='./data/senticnet/german', mode='prepare'))
+    model.add_kb(10, SenticNet(data_path='./data/senticnet/english', mode='prepare'))
 
     # create tokenizer
     tokenizer = BertTokenizer.from_pretrained(bert_base_model)
@@ -230,38 +220,38 @@ if __name__ == '__main__':
 
         print("Preprocessing Documents...")
 
-        full_caches = [([], [], [], []) for _ in [kb for kb in model.kbs if kb is not None]]
+        # reset caches
+        model.clear_kb_caches()
+        # features to extract
         is_random_nexts, token_ids, segment_ids, masked_labels = [], [], [], []
         # create training data from each document separately
         for i in tqdm(range(len(documents))):
-            outputs, caches = create_training_data(i, documents, model, tokenizer, **kwargs)
-           # update lists
-            is_random_nexts.extend(outputs[0])
-            token_ids.extend(outputs[1])
-            segment_ids.extend(outputs[2])
-            masked_labels.extend(outputs[3])
-            # unpack caches
-            for i, cache in enumerate(caches):
-                full_caches[i][0].extend(cache[0])
-                full_caches[i][1].extend(cache[1])
-                full_caches[i][2].extend(cache[2])
-                full_caches[i][3].extend(cache[3])
+            # get features - this also build the corresponfing caches in the model
+            features = create_training_data(i, documents, model, tokenizer, **kwargs)
+            # add features to lists
+            is_random_nexts.extend(features[0])
+            token_ids.extend(features[1])
+            segment_ids.extend(features[2])
+            masked_labels.extend(features[3])
 
-        print("Saving Preprocessed Data...")
-
-        # stack tensors    
+        # get caches from model
+        caches = [cache for cache in model.get_kb_caches() if cache is not None]
+        # stack feature tensors    
         data = (
             torch.stack(token_ids, dim=0), 
             torch.stack(segment_ids, dim=0),
             torch.tensor(is_random_nexts).long(), 
-            torch.stack(masked_labels, dim=0)
+            torch.stack(masked_labels, dim=0),
         )
-        # stack cached tensors
-        full_caches = [[torch.cat(cached, dim=0) for cached in cache] for cache in full_caches]
+
+        print("Saving Preprocessed Data...")
 
         # build output file path
         _, fname = os.path.split(fpath)
         output_fpath = os.path.join(output_path, fname.replace('.txt', '.pkl'))
         # save tensors to output-file
-        torch.save({'data': data, 'caches': full_caches}, output_fpath)
+        torch.save({'data': data, 'caches': caches}, output_fpath)
+
         print("Saved Training Data to %s" % output_fpath)
+
+    print("Finished Preprocessing!")

@@ -27,7 +27,7 @@ class KnowBertEncoder(BertEncoder):
 
     # *** general ***
 
-    def add_knowledge(self, layer:int, kb:KnowledgeBase, max_mentions=10, max_mention_span=5, max_candidates=10, threshold=None):
+    def add_knowledge(self, layer:int, kb:KnowledgeBase, max_mentions=10, max_mention_span=5, max_candidates=15, threshold=None):
         """ add a knowledge bases in between layer and layer+1 """
         
         # check if kb is of correct type
@@ -90,11 +90,15 @@ class KnowBertEncoder(BertEncoder):
 
     # *** caches ***
 
-    def reset_kb_caches(self):
+    def get_kb_caches(self):
+        """ get current caches of all knowledge bases """
+        return [kb.cache if kb is not None else None for kb in self.kbs]
+
+    def clear_kb_caches(self):
         """ reset all caches of all knowledge bases """
         for kb in self.kbs:
             if kb is not None:
-                kb.reset_cache()
+                kb.clear_cache()
 
     def prepare_kbs(self, batch_tokens:list):
         """ prepare all knowledge bases for next forward pass.
@@ -105,13 +109,13 @@ class KnowBertEncoder(BertEncoder):
             return = ([dict, ..., dict], ..., [dict, ..., dict])
         """
         # reset and set caches
-        self.reset_kb_caches()
-        caches, candidates = zip(*[self.get_kb_caches(tokens, True) for tokens in batch_tokens])
+        self.clear_kb_caches()
+        caches, candidates = zip(*[self.build_kb_caches(tokens, True) for tokens in batch_tokens])
         self.stack_kb_caches(*caches)
         # return all candidates
         return candidates
 
-    def get_kb_caches(self, tokens:list, ouput_candidates:bool=True):
+    def build_kb_caches(self, tokens:list, output_candidates:bool=True):
         """ Get cache for each knowledge base from tokens.
 
             Return a list of caches, one for each knowledge base and None for layers without one.
@@ -119,7 +123,7 @@ class KnowBertEncoder(BertEncoder):
 
             return = [cache, ..., cache], [dict, ..., dict]
         """        
-        caches, candidates = zip(*[kb.get_cache(tokens) if kb is not None else (None, None) for kb in self.kbs])
+        caches, candidates = zip(*[kb.get_cache_and_mention_candidates(tokens) if kb is not None else (None, None) for kb in self.kbs])
         if output_candidates:
             return caches, candidates
         return caches
@@ -245,21 +249,25 @@ class KnowBertHelper(object):
         """ add a knowledge base layer and layer+1 """
         return self._knowbert_encoder.add_knowledge(layer, kb, *args, **kwargs)
 
-    def reset_kb_caches(self):
+    def get_kb_caches(self):
+        """ get current caches of all knowledge bases """
+        return self._knowbert_encoder.get_kb_caches()
+
+    def clear_kb_caches(self):
         """ reset all caches """
-        return self._knowbert_encoder.reset_kb_caches()
+        return self._knowbert_encoder.clear_kb_caches()
 
     def prepare_kbs(self, tokens:list):
         """ prepare all knowledge bases for next forward pass """
         return self._knowbert_encoder.prepare_kbs(tokens)
 
-    def get_kb_caches(self, tokens):
-        """ Get cache for each knowledge base from tokens.
+    def build_kb_caches(self, tokens):
+        """ Build cache for each knowledge base from tokens.
             Return a list of caches, one for each knowledge base and None for layers without one 
 
             return = [cache, ..., cache]
         """  
-        return self._knowbert_encoder.get_kb_caches(tokens, False)
+        return self._knowbert_encoder.build_kb_caches(tokens, False)
 
     def stack_kb_caches(self, *caches):
         """ Stack multiple caches for each knowledge base. 
