@@ -8,6 +8,7 @@ from .embedding import SenticNetEmbedding
 from .concept_parser import ConceptParser
 # import utils
 import os
+import re
 from .utils import reconstruct_from_wordpieces
 
 
@@ -17,11 +18,9 @@ class SenticNet(KnowledgeBase):
         super(SenticNet, self).__init__(embedd_dim=100)
 
         # only load what is required
-        if mode in ['all', 'prepare']:
+        # if mode in ['all', 'prepare']:
             # load parser and sentic-net graph
-            self.concept_parser = ConceptParser()
-            # cache
-            self.nodes = None
+            # self.concept_parser = ConceptParser()
 
         if mode in ['all', 'train']:
             # create embedder
@@ -30,8 +29,49 @@ class SenticNet(KnowledgeBase):
 
         # always load graph
         self.graph = SenticNetGraph(os.path.join(data_path, "senticnet.rdf.xml"))
+        # cache
+        self.nodes = None
 
     def find_mentions(self, wordpiece_tokens):
+
+        # return self.find_concept_mentions(wordpiece_tokens)
+        return self.find_token_mentions(wordpiece_tokens)
+
+    def find_token_mentions(self, wordpiece_tokens):
+        print("Find Mentions...")
+        # reconstruct text and find concepts
+        text, spans = reconstruct_from_wordpieces(wordpiece_tokens)
+        concept_matches = re.finditer('(\w)+', text)
+        concept_terms, concept_spans = zip(*[(m.group(), (m.start(), m.end())) for m in concept_matches])
+        # get concept-nodes from senticnet-parser
+        concept_nodes = [self.graph.get_concept(term) for term in concept_terms]
+        # select all concepts contained in senticnet
+        concept_mask = [node is not None for node in concept_nodes]
+        concept_nodes = [node for node, valid in zip(concept_nodes, concept_mask) if valid]
+        concept_terms = [term for term, valid in zip(concept_terms, concept_mask) if valid]
+        concept_spans = [span for span, valid in zip(concept_spans, concept_mask) if valid]
+        # bin all tokens in concepts
+        concept_tokens = [[] for _ in range(sum(concept_mask))]
+        cur_concept_idx = 0
+        for i, (b, e) in enumerate(spans):
+            # bin token in concepts
+            cb, ce = concept_spans[cur_concept_idx]
+            if (cb <= b) and (e <= ce):
+                concept_tokens[cur_concept_idx].append(i)
+            # next concept
+            if e >= ce:
+                cur_concept_idx += 1
+            # all concepts processed
+            if cur_concept_idx >= sum(concept_mask):
+                break
+
+        print(concept_terms)
+        print([[wordpiece_tokens[i] for i in token_ids] for token_ids in concept_tokens])
+        exit()
+        # build concept-token-ma
+        return dir(zip(concept_terms, concept_tokens))
+
+    def find_concept_mentions(self, wordpiece_tokens):
         # reconstruct text and find concepts
         text, spans = reconstruct_from_wordpieces(wordpiece_tokens)
         concepts = self.concept_parser.parse(text)
@@ -63,15 +103,12 @@ class SenticNet(KnowledgeBase):
             term: sum([concept_wp_spans_clean[concept_idx_clean.index(i)] for i in idx], [])
             for term, idx in zip(concept_terms, concept_idx)
         }
-        # cache nodes
-        self.nodes = dict(zip(concept_terms, concept_nodes))
         # return
         return concept_token_map
 
     def find_candidates(self, mention):
-        # check if node for current mention is caches
-        node = self.nodes[mention] if mention in self.nodes else self.graph.get_concept(mention)
-        # get semantics from node
+        # get semantics from graph
+        node = self.graph.get_concept(mention)
         semantics = self.graph.get_semantic_ids(node)
         # get text of semantics and return
         return [node.index] + semantics

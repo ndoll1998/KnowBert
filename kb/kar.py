@@ -408,8 +408,9 @@ class KAR(nn.Module):
 
     def forward(self, h):
         
-        # read cache
+        # read cache and move all to device
         mention_spans, candidate_ids, candidate_mask, candidate_priors = self.read_cache()
+        mention_spans, candidate_ids, candidate_mask, candidate_priors = mention_spans.to(h.device), candidate_ids.to(h.device), candidate_mask.to(h.device), candidate_priors.to(h.device)
         # check cache values
         if (len(mention_spans) != h.size(0)) or (candidate_ids.size(0) != h.size(0)) \
                 or (candidate_mask.size(0) != h.size(0)) or (candidate_priors.size(0) != h.size(0)):

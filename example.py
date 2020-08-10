@@ -31,7 +31,7 @@ class TestKB(KnowledgeBase):
         return torch.empty((*entity_ids.size(), self.embedd_dim)).uniform_(-1, 1)
 
 # sample sentences
-sampleA = "This is a nice coffee spot!"
+sampleA = "This is a nice coffee spot and the food was tasty too!"
 sampleB = "I do not like this place very much!"
 
 # create bert model

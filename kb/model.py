@@ -27,7 +27,7 @@ class KnowBertEncoder(BertEncoder):
 
     # *** general ***
 
-    def add_knowledge(self, layer:int, kb:KnowledgeBase, max_mentions=10, max_mention_span=5, max_candidates=15, threshold=None):
+    def add_knowledge(self, layer:int, kb:KnowledgeBase, max_mentions=15, max_mention_span=5, max_candidates=10, threshold=None):
         """ add a knowledge bases in between layer and layer+1 """
         
         # check if kb is of correct type

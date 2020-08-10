@@ -186,8 +186,10 @@ if __name__ == '__main__':
     from senticnet.kb import SenticNet
 
     bert_base_model = "bert-base-uncased"
-    source_file_path = "data/pretraining_data/english_yelp/txt/small_*.txt"
-    output_path = "data/pretraining_data/"
+    source_file_path = "data/pretraining_data/english_yelp/txt/english_*.txt"
+    output_path = "data/pretraining_data/english_yelp/processed"
+    # create dump-path
+    os.makedirs(output_path, exist_ok=True)
 
     kwargs = {
         'max_seq_length': 128,
