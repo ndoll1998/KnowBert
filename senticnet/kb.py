@@ -7,12 +7,13 @@ from .graph import SenticNetGraph
 from .embedding import Embedding
 from .concept_parser import ConceptParser
 # import utils
+import os
 from .utils import reconstruct_from_wordpieces
 
 
 class SenticNet(KnowledgeBase):
 
-    def __init__(self, mode="all"):
+    def __init__(self, mode="all", data_path='./data/senticnet'):
         super(SenticNet, self).__init__(embedd_dim=100)
 
         # only load what is required
@@ -24,10 +25,10 @@ class SenticNet(KnowledgeBase):
 
         if mode in ['all', 'train']:
             # create embedder
-            self.embedder = Embedding("data/senticnet/affectivespace.csv", self.embedd_dim, self.pad_id)
+            self.embedder = Embedding(os.path.join(data_path, 'affectivespace.csv'), self.embedd_dim, self.pad_id)
 
         # always load graph
-        self.graph = SenticNetGraph("data/senticnet/senticnet5.rdf.xml")
+        self.graph = SenticNetGraph(os.path.join(data_path, "senticnet5.rdf.xml"))
 
     def find_mentions(self, wordpiece_tokens):
         # reconstruct text and find concepts

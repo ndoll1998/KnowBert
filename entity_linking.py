@@ -6,20 +6,18 @@ from senticnet.kb import SenticNet
 # sample text
 sample = "The waiter was really nice."
 # model
-bert_base_model = "bert-base-uncased"
-parameters_path = "data/results/bert-base-uncased-all-chunks/model-Final.pkl"
+tokenizer = "bert-base-uncased"
+bert_base_model = "data/results/bert-base-uncased"
 
 # create model
-config = transformers.BertConfig.from_pretrained(bert_base_model)
-model = KnowBertForPretraining(config)
+model = KnowBertForPretraining.from_pretrained(bert_base_model)
 # add knowledge bases
 kb = model.add_kb(10, SenticNet()).kb
 # load model parameters
-model.load_state_dict(torch.load(parameters_path, map_location="cpu"))
 model.eval()
 
 # create tokenizer
-tokenizer = transformers.BertTokenizer.from_pretrained(bert_base_model)
+tokenizer = transformers.BertTokenizer.from_pretrained(tokenizer)
 
 # tokenize sample
 tokens = tokenizer.tokenize(sample)

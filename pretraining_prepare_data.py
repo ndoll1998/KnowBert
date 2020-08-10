@@ -101,8 +101,8 @@ def create_training_data(
             tokens = ["[CLS]"] + tokens_a + ["[SEP]"] + tokens_b + ["[SEP]"]
             segment_ids = [0] * (len(tokens_a) + 2) + [1] * (len(tokens_b) + 1)
 
-            # # create all kb-caches
-            kb_caches = knowbert_model.get_kb_caches(tokens)
+            # create all kb-caches
+            kb_caches, _ = knowbert_model.get_kb_caches(tokens)
             kb_caches = [cache for cache, valid in zip(kb_caches, knowbert_kb_mask) if valid]
             # add to lists
             for cache, target_cache in zip(kb_caches, all_kb_caches):

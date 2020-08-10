@@ -5,8 +5,9 @@ import torch.nn as nn
 # import transformers
 from transformers import BertModel, BertConfig
 from transformers.modeling_bert import (
-    BertForPreTraining, BertPreTrainingHeads, 
-    BertEmbeddings, BertEncoder, BertPooler
+    BertForPreTraining, 
+    BertForSequenceClassification,
+    BertPreTrainingHeads, BertEmbeddings, BertEncoder, BertPooler
 )
 # import kar and knowledge base
 from .kar import KAR
@@ -305,3 +306,21 @@ class KnowBertForPretraining(BertForPreTraining, KnowBertHelper):
 
         # initialize helper
         KnowBertHelper.__init__(self, self.bert.encoder)
+
+class KnowBertForSequenceClassification(BertForSequenceClassification, KnowBertHelper):
+    """ KnowBert for Sequence Classification """
+
+    def __init__(self, config):
+        super(BertForSequenceClassification, self).__init__(config)
+        self.num_labels = config.num_labels
+        # create model
+        self.bert = KnowBert(config)
+        self.dropout = nn.Dropout(config.hidden_dropout_prob)
+        self.classifier = nn.Linear(config.hidden_size, config.num_labels)
+        # initialize weights
+        self.init_weights()
+
+        # initialize helper
+        KnowBertHelper.__init__(self, self.bert.encoder)
+
+

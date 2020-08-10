@@ -77,7 +77,7 @@ def predict(model, batch, device):
     data, cached = batch[:4], batch[4:]
     # unpack data and update caches
     input_ids, token_type_ids, next_sentence_labels, masked_labels = data
-    set_caches(model.module if type(model) is nn.DataParallel else model, cached)
+    set_caches(model, cached)
     # predict
     return model.forward(
         input_ids=input_ids.to(device), 
@@ -93,7 +93,7 @@ if __name__ == '__main__':
     # base model and data path
     bert_base_model = "bert-base-uncased"
     data_path = "data/pretraining_data/english_yelp_reviews_chunk_*.pkl"
-    dump_path = "data/results/bert-base-uncased-all-chucks"
+    dump_path = "data/results/bert-base-uncased"
     # optimizer and data preparation
     epochs = 20
     batch_size = 64
@@ -110,13 +110,8 @@ if __name__ == '__main__':
     kb = model.add_kb(10, SenticNet(mode="train"))
     # only compute gradients down to layer 10
     model.freeze_layers(10)
-    
-    # if torch.cuda.device_count() > 1:
-        # use all devices
-        # model = nn.DataParallel(model)
     # use main-device
     model.to(main_device)
-
 
     print("Creating Optimizer...")
 
@@ -162,27 +157,28 @@ if __name__ == '__main__':
         # test model
         all_mask_lm_preds, all_next_sentence_preds = [], []
         all_mask_lm_targets, all_next_sentence_targets = [], []
+        
+        with torch.no_grad():
+            for batch in test_dataloader:
+                # predict
+                loss, mask_lm_scores, next_sentence_scores = predict(model, batch, main_device)
+                running_loss += loss.item()
+                # get predictions from scores
+                mask_lm_preds = mask_lm_scores.max(dim=-1)[1].cpu().flatten()
+                next_sentence_preds = next_sentence_scores.max(dim=1)[1].cpu().flatten()
+                # get target values from batch
+                mask_lm_targets, next_sentence_targets = batch[3].flatten(), batch[2].flatten()
 
-        for batch in test_dataloader:
-            # predict
-            loss, mask_lm_scores, next_sentence_scores = predict(model, batch, main_device)
-            running_loss += loss.item()
-            # get predictions from scores
-            mask_lm_preds = mask_lm_scores.max(dim=-1)[1].cpu().flatten()
-            next_sentence_preds = next_sentence_scores.max(dim=1)[1].cpu().flatten()
-            # get target values from batch
-            mask_lm_targets, next_sentence_targets = batch[3].flatten(), batch[2].flatten()
+                # create and apply mask for lm prediction
+                mask_lm_mask = (mask_lm_targets != -100)
+                mask_lm_preds = mask_lm_preds[mask_lm_mask]
+                mask_lm_targets = mask_lm_targets[mask_lm_mask]
 
-            # create and apply mask for lm prediction
-            mask_lm_mask = (mask_lm_targets != -100)
-            mask_lm_preds = mask_lm_preds[mask_lm_mask]
-            mask_lm_targets = mask_lm_targets[mask_lm_mask]
-
-            # extend lists
-            all_mask_lm_preds.extend(mask_lm_preds.tolist())
-            all_mask_lm_targets.extend(mask_lm_targets.tolist())
-            all_next_sentence_preds.extend(next_sentence_preds.tolist())
-            all_next_sentence_targets.extend(next_sentence_targets.tolist())
+                # extend lists
+                all_mask_lm_preds.extend(mask_lm_preds.tolist())
+                all_mask_lm_targets.extend(mask_lm_targets.tolist())
+                all_next_sentence_preds.extend(next_sentence_preds.tolist())
+                all_next_sentence_targets.extend(next_sentence_targets.tolist())
         
         # compute f1-scores
         mask_lm_f1_score = f1_score(all_mask_lm_targets, all_mask_lm_preds, average='micro')
@@ -196,7 +192,7 @@ if __name__ == '__main__':
         print("\n\tTest-Loss %.4f\t - Mask-LM-F1 %.4f\t - Next-Sent-F1 %.4f" % (test_losses[-1], mask_lm_f1_score, next_sentence_f1_score))
 
         # save model parameters
-        torch.save(model.state_dict(), os.path.join(dump_path, "model-E%i.pkl" % e))
+        torch.save(model.state_dict(), os.path.join(dump_path, "model-ckpt-%i.pkl" % e))
 
     print("Saving results...")
     # save final results
@@ -219,6 +215,6 @@ if __name__ == '__main__':
     ax.set(xlabel="Epoch", ylabel="F1-Scores", title="F1-Scores for Mask-LM and Next-Sentence")
 
     # save model parameters
-    torch.save(model.state_dict(), os.path.join(dump_path, "model-Final.pkl"))
+    model.save_pretrained(dump_path)
     # save optimizer parameters for further training
     torch.save(optim.state_dict(), os.path.join(dump_path, "optimizer.pkl"))
