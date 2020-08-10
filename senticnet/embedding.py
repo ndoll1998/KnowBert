@@ -6,7 +6,7 @@ import torch.nn as nn
 # utils
 from collections import OrderedDict
 
-class Embedding(object):
+class SenticNetEmbedding(object):
 
     def __init__(self, embedd_dim, pad_id=None):
         # save parameters
@@ -29,7 +29,7 @@ class Embedding(object):
         # the padding tensor will not be trained or anything since its just a fill vector
         tensors = [torch.zeros(self.embedd_dim)]
         # load embedding tensors from file
-        with open(csv_file, 'r', encoding='latin-1') as f:
+        with open(fpath, 'r', encoding='latin-1') as f:
             for row in f:
                 # split and create tensor
                 items = row.split(',')
@@ -48,16 +48,17 @@ class Embedding(object):
             _weight=torch.stack(tensors, dim=0)
         )
 
-    def load(self, words_file, embedd_file):
+    def load(self, path):
+        print("Loading SenticNet Embeddings... (%s)" % path)
         # clear word2id map
         self.word2id = OrderedDict()
         # load word-to-id map
-        with open(words_file, "r") as f:
+        with open(os.path.join(path, "entities.txt"), "r") as f:
             # start enumerating at 1 to skip padding embedding at position 0
             for i, word in enumerate(f, 1):
                 self.word2id[word] = i
         # load embedding and add padding embedding
-        weight = torch.load(embedd_file, map_location='cpu')
+        weight = torch.load(os.path.join(path, 'entities.bin'), map_location='cpu')
         assert weight.size(1) == self.embedd_dim
         weight = torch.cat((torch.zeros((1, self.embedd_dim)), weight), dim=0)
         # create embedding
@@ -138,10 +139,12 @@ if __name__ == '__main__':
     # load graph
     graph = SenticNetGraph("../data/senticnet/german/senticnet_de.rdf.xml")
     # train a knowledge graph embedding for senticnet graph
-    embedding = Embedding(embedd_dim=200, model="SimplE")
+    embedding = SenticNetEmbedding(embedd_dim=200)
 
     print("Training Embedding...")
-    embedding.train_embedding(graph)
+    results = embedding.train_embedding(graph, model="SimplE")
+    evaluation_results = results.metric_results.to_flat_dict()
+    print(evaluation_results)
 
     print("Saving Embedding...")
     embedding.save("../data/senticnet/german")

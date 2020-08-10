@@ -4,7 +4,7 @@ import torch.nn as nn
 from kb.knowledge import KnowledgeBase
 # import senticnet stuff
 from .graph import SenticNetGraph
-from .embedding import Embedding
+from .embedding import SenticNetEmbedding
 from .concept_parser import ConceptParser
 # import utils
 import os
@@ -13,7 +13,7 @@ from .utils import reconstruct_from_wordpieces
 
 class SenticNet(KnowledgeBase):
 
-    def __init__(self, mode="all", data_path='./data/senticnet'):
+    def __init__(self, data_path='./data/senticnet/english', mode="all"):
         super(SenticNet, self).__init__(embedd_dim=100)
 
         # only load what is required
@@ -25,10 +25,11 @@ class SenticNet(KnowledgeBase):
 
         if mode in ['all', 'train']:
             # create embedder
-            self.embedder = Embedding(os.path.join(data_path, 'affectivespace.csv'), self.embedd_dim, self.pad_id)
+            self.embedder = SenticNetEmbedding(self.embedd_dim, self.pad_id)
+            self.embedder.load(data_path)
 
         # always load graph
-        self.graph = SenticNetGraph(os.path.join(data_path, "senticnet5.rdf.xml"))
+        self.graph = SenticNetGraph(os.path.join(data_path, "senticnet.rdf.xml"))
 
     def find_mentions(self, wordpiece_tokens):
         # reconstruct text and find concepts
@@ -75,16 +76,17 @@ class SenticNet(KnowledgeBase):
         # get text of semantics and return
         return [node.index] + semantics
 
-    def get_prior(self, embedd_id):
-        return 1
+    def get_prior(self, candidate_id):
+        # use attention score of concept as prior probability
+        return self.graph.get_concept_from_id(candidate_id).attention
 
     def id2entity(self, concept_id):
-        return self.graph.get_node_from_id(concept_id).text
+        return self.graph.get_concept_from_id(concept_id).text
 
     def embedd(self, node_ids):
         # get concepts from node-ids
         flat_node_ids = node_ids.flatten().tolist()
-        concepts = [self.graph.get_node_from_id(i) if i != self.pad_id else None for i in flat_node_ids]
+        concepts = [self.graph.get_concept_from_id(i) if i != self.pad_id else None for i in flat_node_ids]
         # get embeddings from concept-terms
         concept_terms = [c.text if c is not None else None for c in concepts]
         flat_embedding_ids = [self.embedder.word2id.get(w, 0) if w is not None else self.pad_id for w in concept_terms]

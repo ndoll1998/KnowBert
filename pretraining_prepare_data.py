@@ -194,8 +194,8 @@ if __name__ == '__main__':
     from senticnet.kb import SenticNet
 
     bert_base_model = "bert-base-uncased"
-    source_file_path = "data/pretraining_data/english_yelp_reviews_chunk_2.txt"
-    output_file_path = "data/pretraining_data/english_yelp_reviews_chunk_2.pkl"
+    source_file_path = "data/pretraining_data/english_yelp_reviews_chunk_*.txt"
+    output_file_path = "data/pretraining_data/english_yelp_reviews_chunk_*.pkl"
 
     kwargs = {
         'max_seq_length': 128,
@@ -209,7 +209,7 @@ if __name__ == '__main__':
     config = BertConfig.from_pretrained(bert_base_model)
     model = KnowBert(config)
     # add knowledge bases
-    model.add_kb(10, SenticNet(mode='prepare'))
+    model.add_kb(10, SenticNet(data_path='./data/senticnet/english', mode='prepare'))
 
     # create tokenizer
     tokenizer = BertTokenizer.from_pretrained(bert_base_model)

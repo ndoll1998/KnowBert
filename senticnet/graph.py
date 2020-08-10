@@ -26,6 +26,7 @@ class SenticNetConcept(object):
         sentics = child.find("sentic:sentics", ns)
         self.pleasentness = float(sentics.find("sentic:pleasantness", ns).text)
         self.sensitivity = float(sentics.find("sentic:sensitivity", ns).text)
+        self.attention = float(sentics.find("sentic:attention", ns).text)
         # get semantics
         self.semantic_urls = [
             s.attrib['{%s}resource' % ns['rdf']]        
@@ -38,7 +39,7 @@ class SenticNetGraph(object):
     """
 
     def __init__(self, path:str):
-        print("Loading SenticNet Graph...", end=" ")
+        print("Loading SenticNet Graph... (%s)" % path)
         # load xml file and get root
         tree, self.ns = parse_and_get_ns(path)
         root = tree.getroot()
@@ -49,9 +50,7 @@ class SenticNetGraph(object):
         # delete xml tree
         del tree, root
 
-        print("Done")
-
-    def get_node_from_id(self, i):
+    def get_concept_from_id(self, i):
         return self.concepts[i]
 
     def get_concept(self, term:str):
