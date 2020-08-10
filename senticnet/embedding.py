@@ -67,7 +67,7 @@ class Embedding(object):
         return self.embedding(ids)
 
 
-def train_tuckER_embedding(fpath, dump_path):
+def train_embedding(fpath, dump_path, model="SimplE"):
     # imports
     from graph import SenticNetGraph
     from pykeen.pipeline import pipeline
@@ -88,8 +88,9 @@ def train_tuckER_embedding(fpath, dump_path):
             triples.append([c.index, 'pleasent', pleasent if c.pleasentness > 0 else not_pleasent])
         if c.sensitivity != 0:
             triples.append([c.index, 'sensitiv', sensitiv if c.sensitivity > 0 else not_sensitive])
+    # triples = triples[:100]
     triples, n = np.asarray(triples), len(triples)
-    print("Number of Triples (Train/Total): %i/%i" % (n, int(0.8 * n)))
+    print("Number of Triples (Train/Total): %i/%i" % (int(0.8 * n), n))
     # create mask for training and testing separation
     train_mask = np.full(n, False)
     train_mask[:int(n * 0.8)] = True
@@ -107,7 +108,7 @@ def train_tuckER_embedding(fpath, dump_path):
         training_triples_factory=train_factory,
         testing_triples_factory=test_factory,
         # model
-        model="TuckER"
+        model=model
     )
     print("Saving Embeddings...")
     # save entity and relation embeddings
@@ -117,11 +118,11 @@ def train_tuckER_embedding(fpath, dump_path):
     with open(os.path.join(dump_path, "entities.txt"), "w+", encoding='utf-8') as f:
         f.write('\n'.join([c.text for c in g.concepts]))
     # done with all
-    print("Saved Embeddings tp %s!" % dump_path)
+    print("Saved Embeddings to %s!" % dump_path)
 
 if __name__ == '__main__':
     # train a knowledge graph embedding for senticnet graph
-    train_tuckER_embedding(
+    train_embedding(
         "../data/senticnet/german/senticnet_de.rdf.xml", 
         "../data/senticnet/german/"
     )
