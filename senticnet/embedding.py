@@ -109,6 +109,9 @@ class Embedding(object):
                 "automatic_memory_optimization": True
             }
         )
+        # get embedding tensor - remove pseudo nodes
+        weight = results.model.entity_embeddings.weight[:len(g.concepts), ...].cpu()
+        
         # update word2id
         words = [c.text for c in g.concepts]
         self.word2id = OrderedDict( zip(words, range(1, len(words) + 1)) )  # 0th element is padding
@@ -116,10 +119,7 @@ class Embedding(object):
         self.embedding = nn.Embedding(
             num_embeddings=len(words) + 1,
             embedding_dim=self.embedd_dim,
-            _weight=torch.cat((
-                torch.zeros((1, self.embedd_dim)), 
-                results.model.entity_embeddings.weight
-            ), dim=0)
+            _weight=torch.cat((torch.zeros((1, self.embedd_dim)), weight), dim=0)
         )
         # return results
         return results
@@ -138,10 +138,13 @@ if __name__ == '__main__':
     # load graph
     graph = SenticNetGraph("../data/senticnet/german/senticnet_de.rdf.xml")
     # train a knowledge graph embedding for senticnet graph
-    embedding = Embedding(embedd_dim=200, model="SimplE")
+    embedding = Embedding(embedd_dim=200)
 
     print("Training Embedding...")
-    embedding.train_embedding(graph)
+    results = embedding.train_embedding(graph, model="SimplE")
+    eval_results = results.metric_results.to_flat_dict()
+    for metric, value in eval_results.items():
+        print(metric.ljust(30, ' '), value)
 
     print("Saving Embedding...")
     embedding.save("../data/senticnet/german")
