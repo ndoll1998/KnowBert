@@ -4,15 +4,15 @@ from kb.model import KnowBertForPretraining
 from senticnet.kb import SenticNet
 
 # sample text
-sample = "The waiter was really nice."
+sample = "Der Kaffee war heiß."
 # model
-tokenizer = "bert-base-uncased"
-bert_base_model = "data/results/bert-base-uncased"
+tokenizer = "bert-base-german-cased"
+bert_base_model = "data/results/bert-base-german-cased-yelp"
 
 # create model
 model = KnowBertForPretraining.from_pretrained(bert_base_model)
 # add knowledge bases
-kb = model.add_kb(10, SenticNet()).kb
+kb = model.add_kb(10, SenticNet("data/senticnet/german")).kb
 # load model parameters
 model.eval()
 

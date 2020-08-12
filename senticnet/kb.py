@@ -10,12 +10,16 @@ from .concept_parser import ConceptParser
 import os
 import re
 from .utils import reconstruct_from_wordpieces
-
+# import stopwords
+from nltk.corpus import stopwords
 
 class SenticNet(KnowledgeBase):
 
-    def __init__(self, data_path='./data/senticnet/english', mode="all"):
-        super(SenticNet, self).__init__(embedd_dim=100)
+    def __init__(self, data_path='./data/senticnet/english', lang='english', mode="all"):
+        super(SenticNet, self).__init__(embedd_dim=200)
+
+        # load stopwords
+        self.sw = stopwords.words(lang)
 
         # only load what is required
         # if mode in ['all', 'prepare']:
@@ -38,11 +42,10 @@ class SenticNet(KnowledgeBase):
         return self.find_token_mentions(wordpiece_tokens)
 
     def find_token_mentions(self, wordpiece_tokens):
-        print("Find Mentions...")
-        # reconstruct text and find concepts
+        # reconstruct text and find tokens
         text, spans = reconstruct_from_wordpieces(wordpiece_tokens)
         concept_matches = re.finditer('(\w)+', text)
-        concept_terms, concept_spans = zip(*[(m.group(), (m.start(), m.end())) for m in concept_matches])
+        concept_terms, concept_spans = zip(*[(m.group(), (m.start(), m.end())) for m in concept_matches if m.group() not in self.sw]) 
         # get concept-nodes from senticnet-parser
         concept_nodes = [self.graph.get_concept(term) for term in concept_terms]
         # select all concepts contained in senticnet
@@ -50,6 +53,9 @@ class SenticNet(KnowledgeBase):
         concept_nodes = [node for node, valid in zip(concept_nodes, concept_mask) if valid]
         concept_terms = [term for term, valid in zip(concept_terms, concept_mask) if valid]
         concept_spans = [span for span, valid in zip(concept_spans, concept_mask) if valid]
+        # no mentions found
+        if len(concept_terms) == 0:
+            return {}
         # bin all tokens in concepts
         concept_tokens = [[] for _ in range(sum(concept_mask))]
         cur_concept_idx = 0
@@ -64,12 +70,8 @@ class SenticNet(KnowledgeBase):
             # all concepts processed
             if cur_concept_idx >= sum(concept_mask):
                 break
-
-        print(concept_terms)
-        print([[wordpiece_tokens[i] for i in token_ids] for token_ids in concept_tokens])
-        exit()
         # build concept-token-ma
-        return dir(zip(concept_terms, concept_tokens))
+        return dict(zip(concept_terms, concept_tokens))
 
     def find_concept_mentions(self, wordpiece_tokens):
         # reconstruct text and find concepts

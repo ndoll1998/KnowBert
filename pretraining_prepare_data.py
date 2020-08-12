@@ -55,17 +55,18 @@ def create_training_data(
         # fill current chunk until target sequence length is reached
         if i == len(doc) - 1 or current_length >= target_seq_length:
 
-            if len(current_chunk) == 0:
+            if len(current_chunk) <= 1:
                 continue
             
             # build first (A) segment/sentence
-            segments_a = 1 if len(current_chunk) <= 2 else random.randint(1, len(current_chunk) - 2)
+            segments_a = 1 if len(current_chunk) == 2 else random.randint(1, len(current_chunk) - 2)
             tokens_a = sum([doc[j] for j in range(segments_a)], [])
 
             # build second (B) segment/sentence
             tokens_b = []
             # random next - for next sentence prediction
             is_random_next = (len(current_chunk) == 1) or (random.random() < 0.5)
+            is_random_next = is_random_next and (len(all_documents) > 1)
 
             if is_random_next:
                 target_b_length = target_seq_length - len(tokens_a)
@@ -186,8 +187,8 @@ if __name__ == '__main__':
     from senticnet.kb import SenticNet
 
     bert_base_model = "bert-base-uncased"
-    source_file_path = "data/pretraining_data/english_yelp/txt/english_*.txt"
-    output_path = "data/pretraining_data/english_yelp/processed"
+    source_file_path = "../bert/raw/english_wiki/processed/*"
+    output_path = "data/pretraining_data/english_wiki/processed"
     # create dump-path
     os.makedirs(output_path, exist_ok=True)
 
@@ -251,6 +252,7 @@ if __name__ == '__main__':
         # build output file path
         _, fname = os.path.split(fpath)
         output_fpath = os.path.join(output_path, fname.replace('.txt', '.pkl'))
+        output_fpath = output_fpath if '.pkl' in output_fpath else (output_fpath + '.pkl')
         # save tensors to output-file
         torch.save({'data': data, 'caches': caches}, output_fpath)
 

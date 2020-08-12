@@ -13,17 +13,20 @@ from matplotlib import pyplot as plt
 from sklearn.metrics import f1_score
 
 def load_data(data_path, batch_size):
-    
+   
+    # find all files that match pattern
+    all_files = glob.glob(data_path)[:1000]
+
     data_tensors, all_caches = [], []
     # load all data files
-    for fpath in glob.glob(data_path):
+    for i, fpath in enumerate(all_files, 1):
         # load current file
         data = torch.load(fpath, map_location='cpu')
         data, caches = data['data'], data['caches']
         data_tensors.append(data)
         all_caches.append(caches)
         # log
-        print("Loaded %i items from %s" % (data[0].size(0), fpath))
+        print("(%i/%i) Loaded %i items from %s" % (i, len(all_files), data[0].size(0), fpath))
 
     # concatenate all tensors from the different files
     data = [torch.cat(tensors, dim=0) for tensors in zip(*data_tensors)]
@@ -74,14 +77,14 @@ def predict(model, batch, device):
 
 if __name__ == '__main__':
 
-    main_device = 'cpu'
+    main_device = 'cuda:0'
     # base model and data path
     bert_base_model = "bert-base-uncased"
-    data_path = "data/pretraining_data/small_english_yelp_reviews.pkl"
-    dump_path = "data/results/bert-base-uncased"
+    data_path = "data/pretraining_data/english_wiki/processed/*.pkl"
+    dump_path = "data/results/bert-base-uncased-wiki"
     # optimizer and data preparation
-    epochs = 1
-    batch_size = 1
+    epochs = 5
+    batch_size = 48
 
     # create dump folder
     os.makedirs(dump_path, exist_ok=True)
@@ -92,7 +95,7 @@ if __name__ == '__main__':
     # make sure the order of the knowledge bases is the same when preprocessing the data
     # the exact positions of the kbs can very as long as the order is kept
     model = KnowBertForPretraining.from_pretrained(bert_base_model)
-    kb = model.add_kb(10, SenticNet(mode="train"))
+    kb = model.add_kb(10, SenticNet(data_path="data/senticnet/english", mode="train"))
     # only compute gradients down to layer 10
     model.freeze_layers(10)
     # use main-device
@@ -135,6 +138,10 @@ if __name__ == '__main__':
             running_loss += loss.item()
             print("\tStep %i/%i\t - Train-Loss %.4f\t - Time %.4fs" % (i, len(train_dataloader), running_loss / i, time() - st), end="\r")
     
+            if i % 10000 == 0:
+                # save checkpoint every 10_000 steps
+                torch.save(model.state_dict(), os.path.join(dump_path, "model-ckpt-%i-%i.pkl" % (e, i)))
+        
         train_losses.append(running_loss / len(train_dataloader))
 
         model.eval()
@@ -178,7 +185,7 @@ if __name__ == '__main__':
 
         # save model parameters
         torch.save(model.state_dict(), os.path.join(dump_path, "model-ckpt-%i.pkl" % e))
-
+    
     print("Saving results...")
     # save final results
     with open(os.path.join(dump_path, "results.txt"), "w+") as f:

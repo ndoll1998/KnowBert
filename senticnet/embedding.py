@@ -90,7 +90,7 @@ class SenticNetEmbedding(object):
         print("Number of Triples (Train/Total): %i/%i" % (int(0.8 * n), n))
         # create mask for training and testing separation
         train_mask = np.full(n, False)
-        train_mask[:int(n * 0.8)] = True
+        train_mask[:int(n * 0.9)] = True
         np.random.shuffle(train_mask)
         # separate into training and testing
         train_triples = triples[train_mask]
@@ -112,7 +112,7 @@ class SenticNetEmbedding(object):
         )
         # get embedding tensor - remove pseudo nodes
         weight = results.model.entity_embeddings.weight[:len(g.concepts), ...].cpu()
-        
+
         # update word2id
         words = [c.text for c in g.concepts]
         self.word2id = OrderedDict( zip(words, range(1, len(words) + 1)) )  # 0th element is padding
@@ -137,9 +137,9 @@ if __name__ == '__main__':
     from graph import SenticNetGraph
 
     # load graph
-    graph = SenticNetGraph("../data/senticnet/german/senticnet_de.rdf.xml")
+    graph = SenticNetGraph("../data/senticnet/english/senticnet.rdf.xml")
     # train a knowledge graph embedding for senticnet graph
-    embedding = Embedding(embedd_dim=200)
+    embedding = SenticNetEmbedding(embedd_dim=200)
 
     print("Training Embedding...")
     results = embedding.train_embedding(graph, model="SimplE")
@@ -148,5 +148,5 @@ if __name__ == '__main__':
         print(metric.ljust(30, ' '), value)
 
     print("Saving Embedding...")
-    embedding.save("../data/senticnet/german")
+    embedding.save("../data/senticnet/english")
 
