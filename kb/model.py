@@ -24,7 +24,6 @@ class KnowBertEncoder(BertEncoder):
         # list of kb per layer
         self.kbs = nn.ModuleList([None for _ in range(self.config.num_hidden_layers)])
 
-
     # *** general ***
 
     def add_knowledge(self, layer:int, kb:KnowledgeBase, max_mentions=15, max_mention_span=5, max_candidates=10, threshold=None):
@@ -153,8 +152,9 @@ class KnowBertEncoder(BertEncoder):
         output_attentions=False,
         output_hidden_states=False,
         output_linking_scores=True,
-        return_dict=False
+        return_dict=False,
     ):
+
         # prepare outputs
         all_hidden_states = () if output_hidden_states else None
         all_attentions = () if output_attentions else None
@@ -279,6 +279,8 @@ class KnowBertHelper(object):
         return self._knowbert_encoder.stack_kb_caches(*caches)
 
 
+
+
 class KnowBert(BertModel, KnowBertHelper):
     """ Basic KnowBert Model as discribed in: "Knowledge Enhanced Contextual Word Representations"
         arxiv: https://arxiv.org/pdf/1909.04164.pdf
@@ -317,6 +319,19 @@ class KnowBertForPretraining(BertForPreTraining, KnowBertHelper):
 
         # initialize helper
         KnowBertHelper.__init__(self, self.bert.encoder)
+
+    def forward(self, *caches, **bert_kwargs):
+
+        # set caches
+        # this is needed to support pytorch's DataParallel Module
+        if len(caches) > 0:
+            self.clear_kb_caches()
+            kbs = [kb for kb in self.bert.encoder.kbs if kb is not None]
+            for kb, cache in zip(kbs, caches):
+                kb.stack_caches(cache)
+        
+        # predict
+        return BertForPreTraining.forward(self, **bert_kwargs)
 
 class KnowBertForSequenceClassification(BertForSequenceClassification, KnowBertHelper):
     """ KnowBert for Sequence Classification """

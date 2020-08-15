@@ -392,24 +392,24 @@ class KAR(nn.Module):
 
     def stack_caches(self, *caches):
         # stack all given caches on current cache
-        self.cache = torch.cat((self.cache, *caches), dim=0)
-        
-    def read_cache(self):
+        self.cache = torch.cat((self.cache.to(caches[0].device), *caches), dim=0)
+
+    def read_cache(self, cache=None):
         # read values from cache and convert to correct types
-        mention_spans = self.cache[:, 0, :, :self.max_mention_span].long()
-        candidate_ids = self.cache[:, 1, :, :].long()
-        candidate_mask = self.cache[:, 2, :, :].bool()
-        candidate_priors = self.cache[:, 3, :, :].float()
+        mention_spans = (self.cache if cache is None else cache)[:, 0, :, :self.max_mention_span].long()
+        candidate_ids = (self.cache if cache is None else cache)[:, 1, :, :].long()
+        candidate_mask = (self.cache if cache is None else cache)[:, 2, :, :].bool()
+        candidate_priors = (self.cache if cache is None else cache)[:, 3, :, :].float()
         # clear cache after reading to prevent 
         # false double use of the same cache
         self.clear_cache()
         # return values
         return mention_spans, candidate_ids, candidate_mask, candidate_priors
 
-    def forward(self, h):
+    def forward(self, h, cache=None):
         
         # read cache and move all to device
-        mention_spans, candidate_ids, candidate_mask, candidate_priors = self.read_cache()
+        mention_spans, candidate_ids, candidate_mask, candidate_priors = self.read_cache(cache)
         mention_spans, candidate_ids, candidate_mask, candidate_priors = mention_spans.to(h.device), candidate_ids.to(h.device), candidate_mask.to(h.device), candidate_priors.to(h.device)
         # check cache values
         if (len(mention_spans) != h.size(0)) or (candidate_ids.size(0) != h.size(0)) \
