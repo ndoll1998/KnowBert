@@ -159,6 +159,8 @@ class KnowBertEncoder(BertEncoder):
         all_hidden_states = () if output_hidden_states else None
         all_attentions = () if output_attentions else None
         all_linking_scores = () if output_linking_scores else None
+        # running loss of knowledge bases
+        running_kb_loss = 0
 
         # pass through each layer
         for i, layer_module in enumerate(self.layer):
@@ -203,7 +205,8 @@ class KnowBertEncoder(BertEncoder):
 
             # apply knowledge base for layer if there is one
             if self.kbs[i] is not None:
-                hidden_states, linking_scores = self.kbs[i].forward(hidden_states)
+                hidden_states, linking_scores, kb_loss = self.kbs[i].forward(hidden_states)
+                running_kb_loss += kb_loss
                 # add linking scores to tuple
                 if output_linking_scores:
                     all_linking_scores = all_linking_scores + (linking_scores,)
@@ -219,7 +222,7 @@ class KnowBertEncoder(BertEncoder):
 
         # return tuple
         if not return_dict:
-            return tuple(v for v in [hidden_states, all_hidden_states, all_attentions, all_linking_scores] if v is not None)
+            return tuple(v for v in [hidden_states, all_hidden_states, all_attentions, all_linking_scores] if v is not None) + (running_kb_loss,)
         # return dict/output-class
         return BaseModelOutput(
             last_hidden_state=hidden_states, 
@@ -278,7 +281,19 @@ class KnowBertHelper(object):
         """
         return self._knowbert_encoder.stack_kb_caches(*caches)
 
-
+    def set_valid_kb_caches(self, *caches):
+        """ Set the caches of each valid knowledge base.
+            The Function expects only the caches of valid kbs in the correct order as input.
+        """
+        
+        # clear all caches and get valid knowledge bases
+        self.clear_kb_caches()
+        kbs = [kb for kb in self.bert.encoder.kbs if kb is not None]
+        # must provide a cache for each knowledge base
+        assert len(kbs) == len(caches)
+        # set all caches
+        for kb, cache in zip(kbs, caches):
+            kb.stack_caches(cache)
 
 
 class KnowBert(BertModel, KnowBertHelper):
@@ -322,14 +337,10 @@ class KnowBertForPretraining(BertForPreTraining, KnowBertHelper):
 
     def forward(self, *caches, **bert_kwargs):
 
-        # set caches
-        # this is needed to support pytorch's DataParallel Module
         if len(caches) > 0:
-            self.clear_kb_caches()
-            kbs = [kb for kb in self.bert.encoder.kbs if kb is not None]
-            for kb, cache in zip(kbs, caches):
-                kb.stack_caches(cache)
-        
+            # accept caches as arguments to support pytorch's DataParallel Module
+            self.set_valid_kb_caches(*caches)
+
         # predict
         return BertForPreTraining.forward(self, **bert_kwargs)
 

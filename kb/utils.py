@@ -17,7 +17,8 @@ def match_shape_2d(ls:list, shape_2d:tuple, fill_value=0):
     tensor = torch.tensor(tensor)
     # pad to match dim1
     return torch.cat((
-        tensor, torch.zeros(dim1 - min(dim1, len(ls)), dim2).type(tensor.dtype)
+        tensor,
+        torch.full((dim1 - min(dim1, len(ls)), dim2), fill_value).type(tensor.dtype)
     ), dim=0)
 
 def bert_extended_attention_mask(mask):

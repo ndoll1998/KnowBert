@@ -159,7 +159,7 @@ class KnowledgeEnhancedRepresentation(nn.Module):
         # initialize module weights
         init_bert_weights(self.enhanced_embs_ln, 0.02)
         
-    def forward(self, linking_scores, candidate_embs, mention_span_reprs):
+    def forward(self, linking_scores, candidate_embs, mention_span_reprs, mention_mask):
         # compute weights from linking scores
         if self.threshold is not None:
             # apply threshold
@@ -167,6 +167,7 @@ class KnowledgeEnhancedRepresentation(nn.Module):
             linking_scores.masked_fill(below_threshold, -10000.0)
         # apply softmax
         normalized_linking_scores = torch.softmax(linking_scores, dim=-1)
+        normalized_linking_scores = mention_mask.unsqueeze(-1).float().detach() * normalized_linking_scores
 
         # compute weighted sum of candidate embeddings
         entity_embs = (normalized_linking_scores.unsqueeze(-1) * candidate_embs).sum(-2)
@@ -181,7 +182,15 @@ class KnowledgeEnhancedRepresentation(nn.Module):
         enhanced_span_reprs = mention_span_reprs + entity_embs
         enhanced_span_reprs = self.enhanced_embs_ln(enhanced_span_reprs)
 
-        return enhanced_span_reprs
+        # compute entropy loss from linking scores
+        probs = normalized_linking_scores[mention_mask]
+        log_probs = torch.log(probs + 1e-5)
+        
+        assert (log_probs == log_probs).all()
+        
+        entropy = -(probs * log_probs).sum(-1)
+
+        return enhanced_span_reprs, entropy
 
 
 """ Recontextualization """
@@ -388,7 +397,7 @@ class KAR(nn.Module):
 
     def clear_cache(self):
         # empty cache
-        self.cache = torch.empty((0, 4, self.max_mentions, max(self.max_mention_span, self.max_candidates)))
+        self.cache = torch.empty((0, 4, self.max_mentions, max(self.max_mention_span, self.max_candidates))).float()
 
     def stack_caches(self, *caches):
         # stack all given caches on current cache
@@ -397,9 +406,9 @@ class KAR(nn.Module):
     def read_cache(self, cache=None):
         # read values from cache and convert to correct types
         mention_spans = (self.cache if cache is None else cache)[:, 0, :, :self.max_mention_span].long()
-        candidate_ids = (self.cache if cache is None else cache)[:, 1, :, :].long()
-        candidate_mask = (self.cache if cache is None else cache)[:, 2, :, :].bool()
-        candidate_priors = (self.cache if cache is None else cache)[:, 3, :, :].float()
+        candidate_ids = (self.cache if cache is None else cache)[:, 1, :, :self.max_candidates].long()
+        candidate_mask = (self.cache if cache is None else cache)[:, 2, :, :self.max_candidates].bool()
+        candidate_priors = (self.cache if cache is None else cache)[:, 3, :, :self.max_candidates].float()
         # clear cache after reading to prevent 
         # false double use of the same cache
         self.clear_cache()
@@ -425,11 +434,11 @@ class KAR(nn.Module):
         # compute entity linking scores
         mention_span_reprs = self.mention_span_representer(h_proj, mention_spans, mention_mask)
         linking_scores = self.entity_linker(candidate_embs, candidate_mask, candidate_priors, mention_span_reprs, mention_mask)
-        enhanced_span_reprs = self.enhanced_representation(linking_scores, candidate_embs, mention_span_reprs)
+        enhanced_span_reprs, entropy = self.enhanced_representation(linking_scores, candidate_embs, mention_span_reprs, mention_mask)
         recontextualized_reprs = self.recontextualizer(enhanced_span_reprs, h_proj, mention_mask)
         # project from knowledge-base back to bert
         h_new = self.dropout(self.kb2bert(recontextualized_reprs))
         h_new = self.output_ln(h + h_new)
 
         # return new hidden state
-        return h_new, linking_scores
+        return h_new, linking_scores, entropy

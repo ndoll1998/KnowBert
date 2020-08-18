@@ -68,15 +68,17 @@ def predict(model, batch, device):
 
 if __name__ == '__main__':
 
+    # cuda
     main_device = 'cuda:0'
+    use_all_available_devices = False
     # base model and data path
     bert_base_model = "bert-base-german-cased"
     data_path = "data/pretraining_data/german_yelp/processed/*.pkl"
-    dump_path = "data/results/bert-base-german-cased-yelp"
+    dump_path = "data/results/bert-base-german-cased-yelp-v2"
     # optimization
     epochs = 5
-    batch_size = 32 * torch.cuda.device_count()
-    gradient_accumulation = 32 // torch.cuda.device_count()
+    batch_size = 16 * (torch.cuda.device_count() if use_all_available_devices else 1)
+    gradient_accumulation = 1 # // (torch.cuda.device_count() if use_all_available_devices else 1)
     max_grad_norm = 1.0
     warmup_portion = 0.01
 
@@ -91,10 +93,10 @@ if __name__ == '__main__':
     model = KnowBertForPretraining.from_pretrained(bert_base_model)
     kb = model.add_kb(10, SenticNet(data_path="data/senticnet/german", mode="train"))
     # only compute gradients down to layer 10
-    # model.freeze_layers(10)
+    model.freeze_layers(10)
     
     
-    if torch.cuda.device_count() > 1:
+    if (torch.cuda.device_count() > 1) and use_all_available_devices:
         print("Using %i cuda devices!" % torch.cuda.device_count())
         model = nn.DataParallel(model, output_device=main_device)
     # use all devices
@@ -127,27 +129,30 @@ if __name__ == '__main__':
             progress.set_description("Train")
 
             model.train()
-            running_loss, accumulated_loss = 0, None
+            running_loss, accumulated_loss = 0, 0
             # train model
             for i, batch in enumerate(train_dataloader, start=1):
                     
                 # predict and get output
-                loss, _, _, _ = predict(model, batch, main_device)
-                loss = loss.sum()
+                loss, _, _, _, entropy = predict(model, batch, main_device)
+                # combine losses
+                loss = loss.mean() # + entropy.mean()
+                accumulated_loss += loss
+                
                 # update losses
-                if accumulated_loss is None:
-                    accumulated_loss = loss
-                else:
-                    # only update the value not the gradient-graph
-                    accumulated_loss.set_(accumulated_loss + loss)
+                #if accumulated_loss is None:
+                #    accumulated_loss = loss
+                #else:
+                #    # only update the value not the gradient-graph
+                #    accumulated_loss.set_(accumulated_loss + loss)
                 running_loss += loss.item()
        
                 # disable gradients - only need build the gradient graph once
-                torch.set_grad_enabled(False)
+                # torch.set_grad_enabled(False)
 
                 # update progress bar
                 progress.update(1)
-                progress.set_postfix({'loss': running_loss / i}, refresh=True)
+                progress.set_postfix({'loss': running_loss / i, "entropy": entropy.mean().item()}, refresh=True)
 
                 if (i % gradient_accumulation == 0) or (i == len(train_dataloader)):
                     # train step
@@ -157,8 +162,8 @@ if __name__ == '__main__':
                     optim.step()
                     scheduler.step()
                     # reset loss and enable gradients
-                    accumulated_loss = None
-                    torch.set_grad_enabled(True)
+                    accumulated_loss = 0
+                    # torch.set_grad_enabled(True)
 
     
                 if i % 10000 == 0:
@@ -179,8 +184,8 @@ if __name__ == '__main__':
             with torch.no_grad():
                 for i, batch in enumerate(test_dataloader, 1):
                     # predict
-                    loss, mask_lm_scores, next_sentence_scores, _ = predict(model, batch, main_device)
-                    running_loss += loss.mean().item()
+                    loss, mask_lm_scores, next_sentence_scores, _, entropy = predict(model, batch, main_device)
+                    running_loss += loss.mean().item() # + entropy.mean().item()
                     # get predictions from scores
                     mask_lm_preds = mask_lm_scores.max(dim=-1)[1].cpu().flatten()
                     next_sentence_preds = next_sentence_scores.max(dim=1)[1].cpu().flatten()

@@ -187,7 +187,7 @@ if __name__ == '__main__':
     from senticnet.kb import SenticNet
 
     bert_base_model = "bert-base-uncased"
-    source_file_path = "../bert/raw/english_wiki/processed/*"
+    source_file_path = "data/pretraining_data/english_wiki/txt/*"
     output_path = "data/pretraining_data/english_wiki/processed"
     # create dump-path
     os.makedirs(output_path, exist_ok=True)
