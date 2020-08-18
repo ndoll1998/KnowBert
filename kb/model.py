@@ -335,14 +335,6 @@ class KnowBertForPretraining(BertForPreTraining, KnowBertHelper):
         # initialize helper
         KnowBertHelper.__init__(self, self.bert.encoder)
 
-    def forward(self, *caches, **bert_kwargs):
-
-        if len(caches) > 0:
-            # accept caches as arguments to support pytorch's DataParallel Module
-            self.set_valid_kb_caches(*caches)
-
-        # predict
-        return BertForPreTraining.forward(self, **bert_kwargs)
 
 class KnowBertForSequenceClassification(BertForSequenceClassification, KnowBertHelper):
     """ KnowBert for Sequence Classification """

@@ -57,8 +57,8 @@ def predict(model, batch, device):
     data, caches = batch[:4], batch[4:]
     input_ids, token_type_ids, next_sentence_labels, masked_labels = data
     # predict
+    model.set_valid_kb_caches(*caches)
     return model.forward(
-        *caches,
         input_ids=input_ids.to(device), 
         token_type_ids=token_type_ids.to(device), 
         labels=masked_labels.to(device),
@@ -70,15 +70,13 @@ if __name__ == '__main__':
 
     # cuda
     main_device = 'cuda:0'
-    use_all_available_devices = False
     # base model and data path
     bert_base_model = "bert-base-german-cased"
     data_path = "data/pretraining_data/german_yelp/processed/*.pkl"
     dump_path = "data/results/bert-base-german-cased-yelp-v2"
     # optimization
     epochs = 5
-    batch_size = 16 * (torch.cuda.device_count() if use_all_available_devices else 1)
-    gradient_accumulation = 1 # // (torch.cuda.device_count() if use_all_available_devices else 1)
+    batch_size = 64
     max_grad_norm = 1.0
     warmup_portion = 0.01
 
@@ -94,12 +92,7 @@ if __name__ == '__main__':
     kb = model.add_kb(10, SenticNet(data_path="data/senticnet/german", mode="train"))
     # only compute gradients down to layer 10
     model.freeze_layers(10)
-    
-    
-    if (torch.cuda.device_count() > 1) and use_all_available_devices:
-        print("Using %i cuda devices!" % torch.cuda.device_count())
-        model = nn.DataParallel(model, output_device=main_device)
-    # use all devices
+    # use device
     model.to(main_device)
 
     print("Loading Data...")
@@ -109,7 +102,7 @@ if __name__ == '__main__':
 
     print("Creating Optimizer...")
     
-    n_train_steps = (len(train_dataloader) // gradient_accumulation) * epochs
+    n_train_steps = len(train_dataloader) * epochs
     # create optimizer and learning rate scheduler
     # optim = torch.optim.Adam(kb.parameters())   # only train knowledge base
     # optim = torch.optim.Adam(model.parameters(), lr=1e-4, weight_decay=0.01)  # train all unfrozen parameters
@@ -129,43 +122,27 @@ if __name__ == '__main__':
             progress.set_description("Train")
 
             model.train()
-            running_loss, accumulated_loss = 0, 0
+            running_loss = 0
             # train model
             for i, batch in enumerate(train_dataloader, start=1):
                     
                 # predict and get output
                 loss, _, _, _, entropy = predict(model, batch, main_device)
                 # combine losses
-                loss = loss.mean() # + entropy.mean()
-                accumulated_loss += loss
-                
-                # update losses
-                #if accumulated_loss is None:
-                #    accumulated_loss = loss
-                #else:
-                #    # only update the value not the gradient-graph
-                #    accumulated_loss.set_(accumulated_loss + loss)
+                loss = loss + entropy.mean()
                 running_loss += loss.item()
        
-                # disable gradients - only need build the gradient graph once
-                # torch.set_grad_enabled(False)
-
                 # update progress bar
                 progress.update(1)
                 progress.set_postfix({'loss': running_loss / i, "entropy": entropy.mean().item()}, refresh=True)
 
-                if (i % gradient_accumulation == 0) or (i == len(train_dataloader)):
-                    # train step
-                    optim.zero_grad()
-                    accumulated_loss.backward()
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
-                    optim.step()
-                    scheduler.step()
-                    # reset loss and enable gradients
-                    accumulated_loss = 0
-                    # torch.set_grad_enabled(True)
+                # train step
+                optim.zero_grad()
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
+                optim.step()
+                scheduler.step()
 
-    
                 if i % 10000 == 0:
                     # save checkpoint every 10_000 steps
                     torch.save(model.state_dict(), os.path.join(dump_path, "model-ckpt-%i-%i.pkl" % (e, i)))
@@ -185,7 +162,7 @@ if __name__ == '__main__':
                 for i, batch in enumerate(test_dataloader, 1):
                     # predict
                     loss, mask_lm_scores, next_sentence_scores, _, entropy = predict(model, batch, main_device)
-                    running_loss += loss.mean().item() # + entropy.mean().item()
+                    running_loss += loss.item() + entropy.mean().item()
                     # get predictions from scores
                     mask_lm_preds = mask_lm_scores.max(dim=-1)[1].cpu().flatten()
                     next_sentence_preds = next_sentence_scores.max(dim=1)[1].cpu().flatten()
