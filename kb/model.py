@@ -104,7 +104,6 @@ class KnowBertEncoder(BertEncoder):
             Basically computes and sets all caches for the given batch.
 
             Returns a list of mention-candidates dicts for each layer and each token-sequence.
-
             return = ([dict, ..., dict], ..., [dict, ..., dict])
         """
         # reset and set caches
@@ -119,7 +118,6 @@ class KnowBertEncoder(BertEncoder):
 
             Return a list of caches, one for each knowledge base and None for layers without one.
             If output_candidates is set it also returns a mention-candidates dict for each layer.
-
             return = [cache, ..., cache], [dict, ..., dict]
         """        
         caches, candidates = zip(*[kb.get_cache_and_mention_candidates(tokens) if kb is not None else (None, None) for kb in self.kbs])
@@ -260,10 +258,6 @@ class KnowBertHelper(object):
         """ reset all caches """
         return self._knowbert_encoder.clear_kb_caches()
 
-    def prepare_kbs(self, tokens:list):
-        """ prepare all knowledge bases for next forward pass """
-        return self._knowbert_encoder.prepare_kbs(tokens)
-
     def build_kb_caches(self, tokens):
         """ Build cache for each knowledge base from tokens.
             Return a list of caches, one for each knowledge base and None for layers without one 
@@ -294,6 +288,10 @@ class KnowBertHelper(object):
         # set all caches
         for kb, cache in zip(kbs, caches):
             kb.stack_caches(cache)
+
+    def prepare_kbs(self, tokens:list):
+        """ prepare all knowledge bases for next forward pass """
+        return self._knowbert_encoder.prepare_kbs(tokens)
 
 
 class KnowBert(BertModel, KnowBertHelper):
@@ -340,6 +338,7 @@ class KnowBertForSequenceClassification(BertForSequenceClassification, KnowBertH
     """ KnowBert for Sequence Classification """
 
     def __init__(self, config):
+        # initialize super class
         super(BertForSequenceClassification, self).__init__(config)
         self.num_labels = config.num_labels
         # create model

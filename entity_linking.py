@@ -31,20 +31,17 @@ input_ids = torch.LongTensor([input_ids])
 mention_candidates = model.prepare_kbs([tokens])[0]
 linking_scores = model.forward(input_ids=input_ids)[-2]
 
-for layer, (layer_scores, d) in enumerate(zip(linking_scores, mention_candidates)):
-  
+for layer, (layer_scores, d) in enumerate(zip(linking_scores, mention_candidates)):  
     if d is not None:
-
         for (term, candidate_ids), scores in zip(d, layer_scores[0]):
-
+            # get valid candidates and scores
             candidate_mask = (candidate_ids != -1)
             candidate_ids, scores = candidate_ids[candidate_mask], torch.softmax(scores[candidate_mask], dim=0)
-            
-            print(-(scores * torch.log(scores)).sum())
+            # print term and entropy
+            print("Term: %s" % term)
+            print("Entropy: %f" % -(scores * torch.log(scores)).sum().item())
             candidate_ids, scores = candidate_ids.tolist(), scores.tolist()
-
-            print(term)
-
+            # print candidates with their scores
             for candidate_id, score in zip(candidate_ids, scores):
                 candidate_term = kb.id2entity(candidate_id)
                 print(candidate_term, score)

@@ -12,13 +12,12 @@ class KnowledgeBase(ABC):
 
     def find_mentions(self, tokens):
         """ find all entity mention spans in given list of tokens. 
-            This needs to return a dict mapping the mention to its token-span """
+            This needs to return a dict mapping a mention term to its token-ids """
         raise NotImplementedError()
 
     def find_candidates(self, mention):
         """ get candidate entities from mention. 
-            This needs to return a list of entity-ids that get passed to the embedding function.
-            Also the find_candidates function gets called immidiatly after find_mentions for all found mentions
+            This needs to return a list of entity-ids that get passed to the embedd function.
         """
         raise NotImplementedError()
 

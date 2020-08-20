@@ -23,6 +23,8 @@ class SelfAttentiveSpanPooler(nn.Module):
         # initialize Module
         super(SelfAttentiveSpanPooler, self).__init__()
         self.attention = nn.Linear(input_dim, 1, bias=False)
+        # save dimension size
+        self.dim = input_dim
 
         # initialize weights
         self.init_weights()
@@ -31,23 +33,24 @@ class SelfAttentiveSpanPooler(nn.Module):
         # initialize module weights
         init_bert_weights(self.attention, 0.02)
 
-    def forward(self, sequence_tensor, spans):
+    def forward(self, h, spans):
+        # self-attentive span pooling
+        shape = h.size()
+        attention_logits = self.attention(h.view(-1, self.dim))
+        attention_logits = attention_logits.view(*shape[:-1], 1)
+        # gather spans
+        idx = torch.arange(spans.size(0)).repeat(spans.size(1), 1).T.unsqueeze(-1)
+        sequence_spans = h[idx, spans, ...]
+        attention_spans = attention_logits[idx, spans, ...]
+        # apply mask and softmax to attention spans
+        attention_spans[spans == -1] = -10000
+        attention_weight_spans = torch.softmax(attention_spans, dim=-2)
+        attention_weight_spans[spans == -1] = 0
+        # compute weighted sum of sequence spans and attention weights
+        pooled = (sequence_spans * attention_weight_spans).sum(-2)
 
-        if len(spans) > 0:
-            # compute attention logits
-            attention_logits = self.attention(sequence_tensor)
-            # pool by spans
-            sequence_spans = [sequence_tensor[span[span >= 0], :] for span in spans]
-            attention_spans = [attention_logits[span[span >= 0], :] for span in spans]
-            # apply softmax to each pooled attention span separately and compute weighted sum
-            attention_weight_spans = [torch.softmax(att_span, dim=0) for att_span in attention_spans]
-            pooled = [(seq_span * weight_span).sum(dim=0) for seq_span, weight_span in zip(sequence_spans, attention_weight_spans)]
-            # stack tensors and return 
-            return torch.stack(pooled)
-
-        # no spans given - this occurs when there is no mention in a given input
-        return torch.zeros((0, sequence_tensor.size(-1))).to(sequence_tensor.device)
-
+        # return pooled tensors
+        return pooled
 
 class MentionSpanRepresenter(nn.Module):
     
@@ -67,21 +70,13 @@ class MentionSpanRepresenter(nn.Module):
         # initialize module weights
         init_bert_weights(self.span_repr_ln, 0.02)
 
-    def forward(self, h_proj, mention_spans, mention_mask):
+    def forward(self, h_proj, mention_spans):
         # build the mention-span representations
-        mention_span_reprs = [self.pooler(h, spans[valids, ...]) for h, spans, valids in zip(h_proj, mention_spans, mention_mask)]
-        # pad to fit max-mentions
-        mention_span_reprs = torch.stack([
-            torch.cat((
-                representation, 
-                torch.zeros((self.max_mentions - representation.size(0), self.embedd_dim)).to(h_proj.device)
-            ), dim=0)
-            for representation in mention_span_reprs
-        ])
+        mention_span_reprs = self.pooler(h_proj, mention_spans)
         # apply layer normalization and return
         mention_span_reprs = self.span_repr_ln(mention_span_reprs)
         return mention_span_reprs
-
+        
 
 """ Entity Linking and Knowledge Enhanced Representation """
 
@@ -185,11 +180,9 @@ class KnowledgeEnhancedRepresentation(nn.Module):
         # compute entropy loss from linking scores
         probs = normalized_linking_scores[mention_mask]
         log_probs = torch.log(probs + 1e-5)
-        
-        assert (log_probs == log_probs).all()
-        
         entropy = -(probs * log_probs).sum(-1)
 
+        # return enhanced representations and entropy of linking attention
         return enhanced_span_reprs, entropy
 
 
@@ -353,9 +346,8 @@ class KAR(nn.Module):
         # initialize module weights
         init_bert_weights(self.output_ln, 0.02)
         init_bert_weights(self.bert2kb, 0.02)
-        self._initialize_kb2bert_weights()
 
-    def _initialize_kb2bert_weights(self):
+        # initialize weight of projection to be the (pseudo-) inverse of the reversed projection
         with torch.no_grad():
             # get weight of first projection and compute it's pseudo-inverse
             w = self.bert2kb.weight.data
@@ -432,7 +424,7 @@ class KAR(nn.Module):
         # project hidden into entity-embedding space
         h_proj = self.bert2kb(h)
         # compute entity linking scores
-        mention_span_reprs = self.mention_span_representer(h_proj, mention_spans, mention_mask)
+        mention_span_reprs = self.mention_span_representer(h_proj, mention_spans)
         linking_scores = self.entity_linker(candidate_embs, candidate_mask, candidate_priors, mention_span_reprs, mention_mask)
         enhanced_span_reprs, entropy = self.enhanced_representation(linking_scores, candidate_embs, mention_span_reprs, mention_mask)
         recontextualized_reprs = self.recontextualizer(enhanced_span_reprs, h_proj, mention_mask)

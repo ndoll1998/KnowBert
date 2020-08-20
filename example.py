@@ -17,7 +17,7 @@ class TestKB(KnowledgeBase):
             return {"like": [3], "place": [5], "very_much": [6, 7]}
 
     def find_candidates(self, mention):
-        # mentions are entity candidates
+        # hard code candidate ids
         # different number of candidates for different mentions
         if mention == "like":
             return [1, 1]
