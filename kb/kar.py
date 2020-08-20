@@ -43,9 +43,9 @@ class SelfAttentiveSpanPooler(nn.Module):
         sequence_spans = h[idx, spans, ...]
         attention_spans = attention_logits[idx, spans, ...]
         # apply mask and softmax to attention spans
-        attention_spans[spans == -1] = -10000
+        attention_spans = attention_spans - (spans == -1) * 10000.0
         attention_weight_spans = torch.softmax(attention_spans, dim=-2)
-        attention_weight_spans[spans == -1] = 0
+        attention_weight_spans = attention_weight_spans - (spans == -1) * attention_weight_spans
         # compute weighted sum of sequence spans and attention weights
         pooled = (sequence_spans * attention_weight_spans).sum(-2)
 
@@ -76,7 +76,7 @@ class MentionSpanRepresenter(nn.Module):
         # apply layer normalization and return
         mention_span_reprs = self.span_repr_ln(mention_span_reprs)
         return mention_span_reprs
-        
+
 
 """ Entity Linking and Knowledge Enhanced Representation """
 
