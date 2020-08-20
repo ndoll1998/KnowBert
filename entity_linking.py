@@ -5,18 +5,18 @@ from kb.model import KnowBertForPretraining
 from senticnet.kb import SenticNet
 
 # sample text
-sample = "Der Kaffee war heiß und lecker."
+sample = "The coffee was hot and tasty. But i still did not like the place to much."
 # model
-tokenizer = "bert-base-german-cased"
-bert_base_model = "data/results/bert-base-german-cased-yelp-entropy"
+tokenizer = "bert-base-uncased"
+bert_base_model = "data/results/bert-base-uncased-wiki"
 
 # create model
 config = transformers.BertConfig.from_pretrained(bert_base_model)
 model = KnowBertForPretraining(config)
 # add knowledge bases
-kb = model.add_kb(10, SenticNet("data/senticnet/german")).kb
+kb = model.add_kb(10, SenticNet("data/senticnet/english")).kb
 # load model parameters
-model.load_state_dict(torch.load(os.path.join(bert_base_model, "pytorch_model.bin"), map_location='cpu'))
+model.load_state_dict(torch.load(os.path.join(bert_base_model, "model-ckpt-1.pkl"), map_location='cpu'))
 model.eval()
 
 # create tokenizer

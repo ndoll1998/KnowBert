@@ -71,14 +71,16 @@ if __name__ == '__main__':
     # cuda
     main_device = 'cuda:0'
     # base model and data path
-    bert_base_model = "bert-base-german-cased"
-    data_path = "data/pretraining_data/german_yelp/processed/*.pkl"
-    dump_path = "data/results/bert-base-german-cased-yelp-v2"
+    bert_base_model = "bert-base-uncased"
+    data_path = "data/pretraining_data/english_wiki/processed/*.pkl"
+    dump_path = "data/results/bert-base-uncased-wiki-entropy-v2"
     # optimization
-    epochs = 5
+    epochs = 2
     batch_size = 64
     max_grad_norm = 1.0
     warmup_portion = 0.01
+    # loss
+    entropy_coeff = 0.1
 
     # create dump folder
     os.makedirs(dump_path, exist_ok=True)
@@ -89,7 +91,7 @@ if __name__ == '__main__':
     # make sure the order of the knowledge bases is the same when preprocessing the data
     # the exact positions of the kbs can very as long as the order is kept
     model = KnowBertForPretraining.from_pretrained(bert_base_model)
-    kb = model.add_kb(10, SenticNet(data_path="data/senticnet/german", mode="train"))
+    kb = model.add_kb(10, SenticNet(data_path="data/senticnet/english", mode="train"))
     # only compute gradients down to layer 10
     model.freeze_layers(10)
     # use device
@@ -129,7 +131,7 @@ if __name__ == '__main__':
                 # predict and get output
                 loss, _, _, _, entropy = predict(model, batch, main_device)
                 # combine losses
-                loss = loss + entropy.mean()
+                loss = loss + entropy.mean() * entropy_coeff
                 running_loss += loss.item()
        
                 # update progress bar
@@ -162,7 +164,7 @@ if __name__ == '__main__':
                 for i, batch in enumerate(test_dataloader, 1):
                     # predict
                     loss, mask_lm_scores, next_sentence_scores, _, entropy = predict(model, batch, main_device)
-                    running_loss += loss.item() + entropy.mean().item()
+                    running_loss += loss.item() + entropy.mean().item() * entropy_coeff
                     # get predictions from scores
                     mask_lm_preds = mask_lm_scores.max(dim=-1)[1].cpu().flatten()
                     next_sentence_preds = next_sentence_scores.max(dim=1)[1].cpu().flatten()
