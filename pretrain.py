@@ -71,16 +71,16 @@ if __name__ == '__main__':
     # cuda
     main_device = 'cuda:0'
     # base model and data path
-    bert_base_model = "bert-base-uncased"
-    data_path = "data/pretraining_data/english_wiki/processed/*.pkl"
-    dump_path = "data/results/bert-base-uncased-wiki-entropy-v2"
+    bert_base_model = "bert-base-german-cased"
+    data_path = "data/pretraining_data/german_yelp/processed/*.pkl"
+    dump_path = "pretrained/bert-base-german-cased-yelp-entropy"
     # optimization
     epochs = 2
     batch_size = 64
     max_grad_norm = 1.0
     warmup_portion = 0.01
     # loss
-    entropy_coeff = 0.1
+    entropy_coeff = 0.01
 
     # create dump folder
     os.makedirs(dump_path, exist_ok=True)
@@ -103,7 +103,7 @@ if __name__ == '__main__':
     train_dataloader, test_dataloader = load_data(data_path, batch_size)
 
     print("Creating Optimizer...")
-    
+
     n_train_steps = len(train_dataloader) * epochs
     # create optimizer and learning rate scheduler
     # optim = torch.optim.Adam(kb.parameters())   # only train knowledge base

@@ -56,7 +56,7 @@ class SenticNetEmbedding(object):
         with open(os.path.join(path, "entities.txt"), "r", encoding='utf-8') as f:
             # start enumerating at 1 to skip padding embedding at position 0
             words = f.read().split('\n')
-            self.word2id = {word: i for i, word in enumerate(words)}
+            self.word2id = {word: i for i, word in enumerate(words, 1)}
         # load embedding and add padding embedding
         weight = torch.load(os.path.join(path, 'entities.bin'), map_location='cpu')
         assert weight.size(1) == self.embedd_dim

@@ -25,7 +25,7 @@ class KnowBertEncoder(BertEncoder):
         # initialize Module
         super(KnowBertEncoder, self).__init__(config)
         # list of kb per layer
-        self.KARs = nn.ModuleList([None for _ in range(self.config.num_hidden_layers)])
+        self.kbs = nn.ModuleList([None for _ in range(self.config.num_hidden_layers)])
 
         # initialize knowledge bases from config
         pretrained_path = config.pretrained_model_name_or_path
@@ -49,11 +49,11 @@ class KnowBertEncoder(BertEncoder):
         if not isinstance(kb, KnowledgeBase):
             raise RuntimeError("%s must inherit KnowledgeBase" % kb.__class__.__name__)
         # check if layer already has a kb
-        if self.KARs[layer] is not None:
+        if self.kbs[layer] is not None:
             raise RuntimeError("There already is a knowledge base at layer %i" % layer)
         
         # add knowledge base to layer
-        self.KARs[layer] = KAR(kb, self.config, **kar_kwargs)
+        self.kbs[layer] = KAR(kb, self.config, **kar_kwargs)
 
 
     def add_knowledge(self, layer:int, kb:KnowledgeBase, max_mentions=15, max_mention_span=5, max_candidates=10, threshold=None) -> KAR:
@@ -85,7 +85,7 @@ class KnowBertEncoder(BertEncoder):
         self._add_knowledge(layer, kb, **kar_kwargs)
         self.config.add_kb(layer, kb, kar_kwargs)
         # return knowledge base
-        return self.KARs[layer]
+        return self.kbs[layer]
 
     def freeze_layers(self, layer:int):
         """ Freeze all parameters up to and including layer.
@@ -117,11 +117,11 @@ class KnowBertEncoder(BertEncoder):
 
     def get_kb_caches(self):
         """ get current caches of all knowledge bases """
-        return [kb.cache if kb is not None else None for kb in self.KARs]
+        return [kb.cache if kb is not None else None for kb in self.kbs]
 
     def clear_kb_caches(self):
         """ reset all caches of all knowledge bases """
-        for kb in self.KARs:
+        for kb in self.kbs:
             if kb is not None:
                 kb.clear_cache()
 
@@ -146,7 +146,7 @@ class KnowBertEncoder(BertEncoder):
             If output_candidates is set it also returns a mention-candidates dict for each layer.
             return = [cache, ..., cache], [dict, ..., dict]
         """        
-        caches, candidates = zip(*[kb.get_cache_and_mention_candidates(tokens) if kb is not None else (None, None) for kb in self.KARs])
+        caches, candidates = zip(*[kb.get_cache_and_mention_candidates(tokens) if kb is not None else (None, None) for kb in self.kbs])
         if output_candidates:
             return caches, candidates
         return caches
@@ -159,7 +159,7 @@ class KnowBertEncoder(BertEncoder):
             all_caches = *([cache, ..., cache], ..., [cache, ..., cache])
         """
         # loop over all caches per knowledge base
-        for kb, caches in zip(self.KARs, zip(*all_caches)):
+        for kb, caches in zip(self.kbs, zip(*all_caches)):
             if kb is not None:
                 assert None not in caches
                 kb.stack_caches(*caches)
@@ -228,8 +228,8 @@ class KnowBertEncoder(BertEncoder):
                 all_attentions = all_attentions + (layer_outputs[1],)
 
             # apply knowledge base for layer if there is one
-            if self.KARs[i] is not None:
-                hidden_states, linking_scores, kb_loss = self.KARs[i].forward(hidden_states)
+            if self.kbs[i] is not None:
+                hidden_states, linking_scores, kb_loss = self.kbs[i].forward(hidden_states)
                 running_kb_loss += kb_loss
                 # add linking scores to tuple
                 if output_linking_scores:
@@ -265,12 +265,12 @@ class KnowBertHelper(object):
         object.__setattr__(self, '_knowbert_encoder', know_bert_encoder_instance)
 
     @property
-    def KARs(self):
-        return self._knowbert_encoder.KARs
+    def kbs(self):
+        return self._knowbert_encoder.kbs
 
     def save_kbs(self, save_directory):
         # save all knowledge bases
-        for i, kar in enumerate(self.KARs):
+        for i, kar in enumerate(self.kbs):
             if kar is not None:
                 # create a subsidrectory for the knowledge base
                 kb_name = KnowledgeBaseManager.instance.get_name_from_type(kar.kb.__class__)
@@ -319,7 +319,7 @@ class KnowBertHelper(object):
         
         # clear all caches and get valid knowledge bases
         self.clear_kb_caches()
-        kbs = [kb for kb in self.bert.encoder.KARs if kb is not None]
+        kbs = [kb for kb in self.bert.encoder.kbs if kb is not None]
         # must provide a cache for each knowledge base
         assert len(kbs) == len(caches)
         # set all caches
