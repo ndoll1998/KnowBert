@@ -2,7 +2,7 @@ import os
 import torch
 import transformers
 from kb.model import KnowBertForPretraining
-from senticnet.kb import SenticNet
+from knowledgeBases.senticnet.kb import SenticNet
 
 # sample text
 sample = "The coffee was hot and tasty. But i still did not like the place to much."

@@ -184,7 +184,7 @@ if __name__ == '__main__':
     from kb.model import KnowBert, BertConfig
     from transformers import BertTokenizer
     # import knowledge bases
-    from senticnet.kb import SenticNet
+    from knowledgeBases.senticnet.kb import SenticNet
 
     bert_base_model = "bert-base-uncased"
     source_file_path = "data/pretraining_data/english_wiki/txt/*"

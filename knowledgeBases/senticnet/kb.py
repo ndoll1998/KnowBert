@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 # import knowledge-base
-from kb.knowledge import KnowledgeBase
+from kb.knowledge import KnowledgeBase, KnowledgeBaseManager
 # import senticnet stuff
 from .graph import SenticNetGraph
 from .embedding import SenticNetEmbedding
@@ -9,16 +9,19 @@ from .concept_parser import ConceptParser
 # import utils
 import os
 import re
+import shutil
 from .utils import reconstruct_from_wordpieces
 # import stopwords
 from nltk.corpus import stopwords
 
+@KnowledgeBaseManager.instance.register('sentic-net')
 class SenticNet(KnowledgeBase):
 
     def __init__(self, data_path='./data/senticnet/english', lang='english', mode="all"):
         super(SenticNet, self).__init__(embedd_dim=200)
 
         # load stopwords
+        self.lang = lang
         self.sw = stopwords.words(lang)
 
         # only load what is required
@@ -26,18 +29,38 @@ class SenticNet(KnowledgeBase):
             # load parser and sentic-net graph
             # self.concept_parser = ConceptParser()
 
-        if mode in ['all', 'train']:
-            # create embedder
-            self.embedder = SenticNetEmbedding(self.embedd_dim, self.pad_id)
-            self.embedder.load(data_path)
+        # create embedder
+        self.embedder = SenticNetEmbedding(self.embedd_dim, self.pad_id)
+        self.embedder.load(data_path)
 
         # always load graph
-        self.graph = SenticNetGraph(os.path.join(data_path, "senticnet.rdf.xml"))
+        self.graph_file = os.path.join(data_path, "senticnet.rdf.xml")
+        self.graph = SenticNetGraph(self.graph_file)
         # cache
         self.nodes = None
 
-    def find_mentions(self, wordpiece_tokens):
+    @property
+    def config(self) -> dict:
+        # get base configuration and add to it
+        config = super(SenticNet, self).config
+        config.update({'lang': self.lang})
+        # return
+        return config
 
+    def save(self, save_directory:str) -> None:
+        # save embeddings
+        self.embedder.save(save_directory)
+        # copy graph file
+        _, fname = os.path.split(self.graph_file)
+        dst = os.path.join(save_directory, fname)
+        if self.graph_file != dst:
+            shutil.copyfile(self.graph_file, dst)
+
+    @staticmethod
+    def load(directory:str, config:dict):
+        return SenticNet(directory, lang=config['lang'])
+
+    def find_mentions(self, wordpiece_tokens):
         # return self.find_concept_mentions(wordpiece_tokens)
         return self.find_token_mentions(wordpiece_tokens)
 

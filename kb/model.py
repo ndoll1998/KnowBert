@@ -1,17 +1,20 @@
+import os
 import re
 # import pytorch
 import torch
 import torch.nn as nn
 # import transformers
-from transformers import BertModel, BertConfig
+from transformers import BertModel
 from transformers.modeling_bert import (
     BertForPreTraining, 
     BertForSequenceClassification,
     BertPreTrainingHeads, BertEmbeddings, BertEncoder, BertPooler
 )
+# import configuration
+from .configuration import KnowBertConfig
 # import kar and knowledge base
 from .kar import KAR
-from .knowledge import KnowledgeBase
+from .knowledge import KnowledgeBase, KnowledgeBaseManager
 
 
 """ KnowBert Encoder """
@@ -22,44 +25,67 @@ class KnowBertEncoder(BertEncoder):
         # initialize Module
         super(KnowBertEncoder, self).__init__(config)
         # list of kb per layer
-        self.kbs = nn.ModuleList([None for _ in range(self.config.num_hidden_layers)])
+        self.KARs = nn.ModuleList([None for _ in range(self.config.num_hidden_layers)])
+
+        # initialize knowledge bases from config
+        pretrained_path = config.pretrained_model_name_or_path
+        for layer, kb_config in config.kbs.items():
+            layer = int(layer)
+            # read from config
+            kb_type, kar_kwargs = kb_config['type'], kb_config['kar_kwargs']
+            # create path to save directory for the knowledge base
+            kb_pretrained_path = os.path.join(pretrained_path, '%i-%s' % (layer, kb_type))
+            # load knowledge base
+            knowledge_base_type = KnowledgeBaseManager.instance.get_type_from_name(kb_type)
+            kb = knowledge_base_type.load(kb_pretrained_path, kb_config)
+            # add knowledge base to encoder
+            self._add_knowledge(layer, kb, **kar_kwargs)
 
     # *** general ***
 
-    def add_knowledge(self, layer:int, kb:KnowledgeBase, max_mentions=15, max_mention_span=5, max_candidates=10, threshold=None):
-        """ add a knowledge bases in between layer and layer+1 """
+    def _add_knowledge(self, layer:int, kb:KnowledgeBase, **kar_kwargs) -> None:
         
         # check if kb is of correct type
         if not isinstance(kb, KnowledgeBase):
             raise RuntimeError("%s must inherit KnowledgeBase" % kb.__class__.__name__)
         # check if layer already has a kb
-        if self.kbs[layer] is not None:
+        if self.KARs[layer] is not None:
             raise RuntimeError("There already is a knowledge base at layer %i" % layer)
         
-        # span-encoder-config
-        span_encoder_config = BertConfig.from_dict({
-            # "hidden_size": 300,
-            "num_hidden_layers": 1,
-            "num_attention_heads": 4,
-            "intermediate_size": 1024
-        })
-        # span-attention-config
-        span_attention_config = BertConfig.from_dict({
-            # "hidden_size": 300,
-            "num_hidden_layers": 1,
-            "num_attention_heads": 4,
-            "intermediate_size": 1024
-        })
-
         # add knowledge base to layer
-        self.kbs[layer] = KAR(
-            kb, self.config, span_encoder_config, span_attention_config, 
-            max_mentions=max_mentions, max_mention_span=max_mention_span,
-            max_candidates=max_candidates, threshold=threshold
-        )
+        self.KARs[layer] = KAR(kb, self.config, **kar_kwargs)
 
+
+    def add_knowledge(self, layer:int, kb:KnowledgeBase, max_mentions=15, max_mention_span=5, max_candidates=10, threshold=None) -> KAR:
+        """ add a knowledge bases in between layer and layer+1 """
+
+        # span-encoder-config
+        span_encoder_config = {
+            "num_hidden_layers": 1,
+            "num_attention_heads": 4,
+            "intermediate_size": 1024
+        }
+        # span-attention-config
+        span_attention_config = {
+            "num_hidden_layers": 1,
+            "num_attention_heads": 4,
+            "intermediate_size": 1024
+        }
+
+        # build keyword arguments for the kar module
+        kar_kwargs = {
+            'span_encoder_config': span_encoder_config,
+            'span_attention_config': span_attention_config,
+            'max_mentions': max_mentions,
+            'max_mention_span': max_mention_span,
+            'max_candidates': max_candidates,
+            'threshold':threshold
+        }
+        # add knowledge base
+        self._add_knowledge(layer, kb, **kar_kwargs)
+        self.config.add_kb(layer, kb, kar_kwargs)
         # return knowledge base
-        return self.kbs[layer]
+        return self.KARs[layer]
 
     def freeze_layers(self, layer:int):
         """ Freeze all parameters up to and including layer.
@@ -91,11 +117,11 @@ class KnowBertEncoder(BertEncoder):
 
     def get_kb_caches(self):
         """ get current caches of all knowledge bases """
-        return [kb.cache if kb is not None else None for kb in self.kbs]
+        return [kb.cache if kb is not None else None for kb in self.KARs]
 
     def clear_kb_caches(self):
         """ reset all caches of all knowledge bases """
-        for kb in self.kbs:
+        for kb in self.KARs:
             if kb is not None:
                 kb.clear_cache()
 
@@ -120,7 +146,7 @@ class KnowBertEncoder(BertEncoder):
             If output_candidates is set it also returns a mention-candidates dict for each layer.
             return = [cache, ..., cache], [dict, ..., dict]
         """        
-        caches, candidates = zip(*[kb.get_cache_and_mention_candidates(tokens) if kb is not None else (None, None) for kb in self.kbs])
+        caches, candidates = zip(*[kb.get_cache_and_mention_candidates(tokens) if kb is not None else (None, None) for kb in self.KARs])
         if output_candidates:
             return caches, candidates
         return caches
@@ -133,7 +159,7 @@ class KnowBertEncoder(BertEncoder):
             all_caches = *([cache, ..., cache], ..., [cache, ..., cache])
         """
         # loop over all caches per knowledge base
-        for kb, caches in zip(self.kbs, zip(*all_caches)):
+        for kb, caches in zip(self.KARs, zip(*all_caches)):
             if kb is not None:
                 assert None not in caches
                 kb.stack_caches(*caches)
@@ -202,8 +228,8 @@ class KnowBertEncoder(BertEncoder):
                 all_attentions = all_attentions + (layer_outputs[1],)
 
             # apply knowledge base for layer if there is one
-            if self.kbs[i] is not None:
-                hidden_states, linking_scores, kb_loss = self.kbs[i].forward(hidden_states)
+            if self.KARs[i] is not None:
+                hidden_states, linking_scores, kb_loss = self.KARs[i].forward(hidden_states)
                 running_kb_loss += kb_loss
                 # add linking scores to tuple
                 if output_linking_scores:
@@ -239,9 +265,20 @@ class KnowBertHelper(object):
         object.__setattr__(self, '_knowbert_encoder', know_bert_encoder_instance)
 
     @property
-    def kbs(self):
-        return self._knowbert_encoder.kbs
-    
+    def KARs(self):
+        return self._knowbert_encoder.KARs
+
+    def save_kbs(self, save_directory):
+        # save all knowledge bases
+        for i, kar in enumerate(self.KARs):
+            if kar is not None:
+                # create a subsidrectory for the knowledge base
+                kb_name = KnowledgeBaseManager.instance.get_name_from_type(kar.kb.__class__)
+                kb_save_directory = os.path.join(save_directory, "%i-%s" % (i, kb_name))
+                # save knowledge base to sub-directory
+                os.makedirs(kb_save_directory, exist_ok=True)
+                kar.kb.save(kb_save_directory)
+
     def freeze_layers(self, layer:int):
         """ Freeze all layers after given index """
         self._knowbert_encoder.freeze_layers(layer)
@@ -282,7 +319,7 @@ class KnowBertHelper(object):
         
         # clear all caches and get valid knowledge bases
         self.clear_kb_caches()
-        kbs = [kb for kb in self.bert.encoder.kbs if kb is not None]
+        kbs = [kb for kb in self.bert.encoder.KARs if kb is not None]
         # must provide a cache for each knowledge base
         assert len(kbs) == len(caches)
         # set all caches
@@ -298,6 +335,9 @@ class KnowBert(BertModel, KnowBertHelper):
     """ Basic KnowBert Model as discribed in: "Knowledge Enhanced Contextual Word Representations"
         arxiv: https://arxiv.org/pdf/1909.04164.pdf
     """
+
+    # set configuration class
+    config_class = KnowBertConfig
 
     def __init__(self, config:dict):
         # dont call constructor of bert-model but instead
@@ -320,6 +360,9 @@ class KnowBertForPretraining(BertForPreTraining, KnowBertHelper):
         Basically BertForPreTraining but using KnowBert as model instead of standard BERT.
     """
 
+    # set configuration class
+    config_class = KnowBertConfig
+
     def __init__(self, config):
         # dont call constructor of BertPreTrainingModel 
         # but call it's super constructor
@@ -333,9 +376,16 @@ class KnowBertForPretraining(BertForPreTraining, KnowBertHelper):
         # initialize helper
         KnowBertHelper.__init__(self, self.bert.encoder)
 
+    def save_pretrained(self, save_directory:str):
+        # save model and knowledge bases
+        BertForPreTraining.save_pretrained(self, save_directory)
+        KnowBertHelper.save_kbs(self, save_directory)
 
 class KnowBertForSequenceClassification(BertForSequenceClassification, KnowBertHelper):
     """ KnowBert for Sequence Classification """
+
+    # set configuration class
+    config_class = KnowBertConfig
 
     def __init__(self, config):
         # initialize super class

@@ -311,13 +311,16 @@ class KAR(nn.Module):
 
     def __init__(self, kb, 
         bert_config:BertConfig, 
-        span_encoder_config:BertConfig, 
-        span_attention_config:BertConfig,
+        span_encoder_config:dict, 
+        span_attention_config:dict,
         max_mentions:int, 
         max_mention_span:int,
         max_candidates:int,
         threshold:float =None, 
     ):
+        # load bert configs from dicts
+        span_encoder_config = BertConfig.from_dict(span_encoder_config)
+        span_attention_config = BertConfig.from_dict(span_attention_config)
         # initialize super
         super(KAR, self).__init__()
         # save values

@@ -53,10 +53,10 @@ class SenticNetEmbedding(object):
         # clear word2id map
         self.word2id = OrderedDict()
         # load word-to-id map
-        with open(os.path.join(path, "entities.txt"), "r") as f:
+        with open(os.path.join(path, "entities.txt"), "r", encoding='utf-8') as f:
             # start enumerating at 1 to skip padding embedding at position 0
-            for i, word in enumerate(f, 1):
-                self.word2id[word] = i
+            words = f.read().split('\n')
+            self.word2id = {word: i for i, word in enumerate(words)}
         # load embedding and add padding embedding
         weight = torch.load(os.path.join(path, 'entities.bin'), map_location='cpu')
         assert weight.size(1) == self.embedd_dim

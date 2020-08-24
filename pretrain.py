@@ -4,7 +4,7 @@ import transformers
 # import knowbert model
 from kb.model import KnowBertForPretraining
 # import knowledge bases
-from senticnet.kb import SenticNet
+from knowledgeBases.senticnet.kb import SenticNet
 # utils
 import os
 import glob
