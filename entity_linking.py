@@ -5,22 +5,17 @@ from kb.model import KnowBertForPretraining
 from knowledgeBases.senticnet.kb import SenticNet
 
 # sample text
-sample = "The coffee was hot and tasty. But i still did not like the place to much."
+sample = "Die Atmosphäre ist auch sehr angenehm, trotz eines Samstag Abends fanden wir direkt einen Platz & die Lautstärke ist im oberen Stockwerk im toleranten Bereich."
 # model
-tokenizer = "bert-base-uncased"
-bert_base_model = "data/results/bert-base-uncased-wiki"
+tokenizer = "bert-base-german-cased"
+bert_base_model = "pretrained/bert-base-german-cased-yelp-entropy"
 
-# create model
-config = transformers.BertConfig.from_pretrained(bert_base_model)
-model = KnowBertForPretraining(config)
-# add knowledge bases
-kb = model.add_kb(10, SenticNet("data/senticnet/english")).kb
-# load model parameters
-model.load_state_dict(torch.load(os.path.join(bert_base_model, "model-ckpt-1.pkl"), map_location='cpu'))
-model.eval()
 
 # create tokenizer
 tokenizer = transformers.BertTokenizer.from_pretrained(tokenizer)
+# create model
+model = KnowBertForPretraining.from_pretrained(bert_base_model)
+model.eval()
 
 # tokenize sample
 tokens = tokenizer.tokenize(sample)
@@ -43,7 +38,7 @@ for layer, (layer_scores, d) in enumerate(zip(linking_scores, mention_candidates
             candidate_ids, scores = candidate_ids.tolist(), scores.tolist()
             # print candidates with their scores
             for candidate_id, score in zip(candidate_ids, scores):
-                candidate_term = kb.id2entity(candidate_id)
+                candidate_term = model.kbs[layer].kb.id2entity(candidate_id)
                 print(candidate_term, score)
 
             print()
