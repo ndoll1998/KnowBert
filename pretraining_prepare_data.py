@@ -181,10 +181,10 @@ if __name__ == '__main__':
     import os
     from glob import glob
     # import model and tokenizer
-    from kb.model import KnowBertModel, BertConfig
+    from src.kb.model import KnowBertModel, BertConfig
     from transformers import BertTokenizer
     # import knowledge bases
-    from knowledgeBases.senticnet.kb import SenticNet
+    from src.knowledge.senticnet.kb import SenticNet
 
     bert_base_model = "bert-base-uncased"
     source_file_path = "data/pretraining_data/english_wiki/txt/*"
@@ -204,7 +204,7 @@ if __name__ == '__main__':
     config = BertConfig.from_pretrained(bert_base_model)
     model = KnowBertModel(config)
     # add knowledge bases
-    model.add_kb(10, SenticNet(data_path='./data/senticnet/english', mode='prepare'))
+    model.add_kb(10, SenticNet(data_path='./data/senticnet/english'))
 
     # create tokenizer
     tokenizer = BertTokenizer.from_pretrained(bert_base_model)

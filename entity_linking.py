@@ -1,8 +1,8 @@
 import os
 import torch
 import transformers
-from kb.model import KnowBertForPretraining
-from knowledgeBases.senticnet.kb import SenticNet
+from src.kb.model import KnowBertForPretraining
+from src import knowledge
 
 # sample text
 sample = "Die Atmosphäre ist auch sehr angenehm, trotz eines Samstag Abends fanden wir direkt einen Platz & die Lautstärke ist im oberen Stockwerk im toleranten Bereich."

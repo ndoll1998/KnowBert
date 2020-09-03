@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 # import knowledge-base
-from kb.knowledge import KnowledgeBase, KnowledgeBaseRegistry
+from ...kb.knowledge import KnowledgeBase, KnowledgeBaseRegistry
 # import senticnet stuff
 from .graph import SenticNetGraph
 from .embedding import SenticNetEmbedding
@@ -17,7 +17,7 @@ from nltk.corpus import stopwords
 @KnowledgeBaseRegistry.instance.register('sentic-net')
 class SenticNet(KnowledgeBase):
 
-    def __init__(self, data_path='./data/senticnet/english', lang='english', mode="all"):
+    def __init__(self, data_path='./data/senticnet/english', lang='english'):
         super(SenticNet, self).__init__(embedd_dim=200)
 
         # load stopwords

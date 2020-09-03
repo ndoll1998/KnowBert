@@ -2,9 +2,9 @@ import torch
 import torch.nn as nn
 import transformers
 # import knowbert model
-from kb.model import KnowBertForPretraining
+from src.kb.model import KnowBertForPretraining
 # import knowledge bases
-from knowledgeBases.senticnet.kb import SenticNet
+from src.knowledge.senticnet.kb import SenticNet
 # utils
 import os
 import glob
@@ -91,7 +91,7 @@ if __name__ == '__main__':
     # make sure the order of the knowledge bases is the same when preprocessing the data
     # the exact positions of the kbs can very as long as the order is kept
     model = KnowBertForPretraining.from_pretrained(bert_base_model)
-    kb = model.add_kb(10, SenticNet(data_path="data/senticnet/english", mode="train"))
+    kb = model.add_kb(10, SenticNet(data_path="data/senticnet/english"))
     # only compute gradients down to layer 10
     model.freeze_layers(10)
     # use device

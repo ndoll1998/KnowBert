@@ -1,8 +1,9 @@
 import torch
 import transformers
-from kb.model import KnowBertModel, KnowBertForPretraining
-from kb.knowledge import KnowledgeBase
+from src.kb.model import KnowBertModel, KnowBertForPretraining
+from src.kb.knowledge import KnowledgeBase, KnowledgeBaseRegistry
 
+@KnowledgeBaseRegistry.instance.register("example-test-kb")
 class TestKB(KnowledgeBase):
     """ Simple af knowledge base """
 
