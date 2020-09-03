@@ -14,7 +14,7 @@ from transformers.modeling_bert import (
 from .configuration import KnowBertConfig
 # import kar and knowledge base
 from .kar import KAR
-from .knowledge import KnowledgeBase, KnowledgeBaseManager
+from .knowledge import KnowledgeBase, KnowledgeBaseRegistry
 
 
 """ KnowBert Encoder """
@@ -36,7 +36,7 @@ class KnowBertEncoder(BertEncoder):
             # create path to save directory for the knowledge base
             kb_pretrained_path = os.path.join(pretrained_path, '%i-%s' % (layer, kb_type))
             # load knowledge base
-            knowledge_base_type = KnowledgeBaseManager.instance.get_type_from_name(kb_type)
+            knowledge_base_type = KnowledgeBaseRegistry.instance.get_type_from_name(kb_type)
             kb = knowledge_base_type.load(kb_pretrained_path, kb_config)
             # add knowledge base to encoder
             self._add_knowledge(layer, kb, **kar_kwargs)
@@ -54,7 +54,6 @@ class KnowBertEncoder(BertEncoder):
         
         # add knowledge base to layer
         self.kbs[layer] = KAR(kb, self.config, **kar_kwargs)
-
 
     def add_knowledge(self, layer:int, kb:KnowledgeBase, max_mentions=15, max_mention_span=5, max_candidates=10, threshold=None) -> KAR:
         """ add a knowledge bases in between layer and layer+1 """
@@ -161,7 +160,7 @@ class KnowBertEncoder(BertEncoder):
         # loop over all caches per knowledge base
         for kb, caches in zip(self.kbs, zip(*all_caches)):
             if kb is not None:
-                assert None not in caches
+                assert all([t is not None for t in caches])
                 kb.stack_caches(*caches)
 
 
@@ -273,7 +272,7 @@ class KnowBertHelper(object):
         for i, kar in enumerate(self.kbs):
             if kar is not None:
                 # create a subsidrectory for the knowledge base
-                kb_name = KnowledgeBaseManager.instance.get_name_from_type(kar.kb.__class__)
+                kb_name = KnowledgeBaseRegistry.instance.get_name_from_type(kar.kb.__class__)
                 kb_save_directory = os.path.join(save_directory, "%i-%s" % (i, kb_name))
                 # save knowledge base to sub-directory
                 os.makedirs(kb_save_directory, exist_ok=True)
@@ -319,7 +318,7 @@ class KnowBertHelper(object):
         
         # clear all caches and get valid knowledge bases
         self.clear_kb_caches()
-        kbs = [kb for kb in self.bert.encoder.kbs if kb is not None]
+        kbs = [kb for kb in self._knowbert_encoder.kbs if kb is not None]
         # must provide a cache for each knowledge base
         assert len(kbs) == len(caches)
         # set all caches
@@ -330,8 +329,13 @@ class KnowBertHelper(object):
         """ prepare all knowledge bases for next forward pass """
         return self._knowbert_encoder.prepare_kbs(tokens)
 
+    def save_pretrained(self, save_directory:str):
+        # save model and knowledge bases
+        super().save_pretrained(save_directory)
+        self.save_kbs(save_directory)
 
-class KnowBert(BertModel, KnowBertHelper):
+
+class KnowBertModel(KnowBertHelper, BertModel):
     """ Basic KnowBert Model as discribed in: "Knowledge Enhanced Contextual Word Representations"
         arxiv: https://arxiv.org/pdf/1909.04164.pdf
     """
@@ -355,7 +359,7 @@ class KnowBert(BertModel, KnowBertHelper):
         # initialize helper
         KnowBertHelper.__init__(self, self.encoder)
 
-class KnowBertForPretraining(BertForPreTraining, KnowBertHelper):
+class KnowBertForPretraining(KnowBertHelper, BertForPreTraining):
     """ KnowBert for pretraining. 
         Basically BertForPreTraining but using KnowBert as model instead of standard BERT.
     """
@@ -368,7 +372,7 @@ class KnowBertForPretraining(BertForPreTraining, KnowBertHelper):
         # but call it's super constructor
         super(BertForPreTraining, self).__init__(config)
         # create model and heads
-        self.bert = KnowBert(config)
+        self.bert = KnowBertModel(config)
         self.cls = BertPreTrainingHeads(config)
         # initialize weights
         self.init_weights()
@@ -376,12 +380,7 @@ class KnowBertForPretraining(BertForPreTraining, KnowBertHelper):
         # initialize helper
         KnowBertHelper.__init__(self, self.bert.encoder)
 
-    def save_pretrained(self, save_directory:str):
-        # save model and knowledge bases
-        BertForPreTraining.save_pretrained(self, save_directory)
-        KnowBertHelper.save_kbs(self, save_directory)
-
-class KnowBertForSequenceClassification(BertForSequenceClassification, KnowBertHelper):
+class KnowBertForSequenceClassification(KnowBertHelper, BertForSequenceClassification):
     """ KnowBert for Sequence Classification """
 
     # set configuration class
@@ -392,7 +391,7 @@ class KnowBertForSequenceClassification(BertForSequenceClassification, KnowBertH
         super(BertForSequenceClassification, self).__init__(config)
         self.num_labels = config.num_labels
         # create model
-        self.bert = KnowBert(config)
+        self.bert = KnowBertModel(config)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         self.classifier = nn.Linear(config.hidden_size, config.num_labels)
         # initialize weights
@@ -400,5 +399,3 @@ class KnowBertForSequenceClassification(BertForSequenceClassification, KnowBertH
 
         # initialize helper
         KnowBertHelper.__init__(self, self.bert.encoder)
-
-

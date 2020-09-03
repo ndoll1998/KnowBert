@@ -44,12 +44,11 @@ class SelfAttentiveSpanPooler(nn.Module):
         attention_spans = attention_logits[idx, spans, ...]
         # apply mask and softmax to attention spans
         mask = (spans == -1).unsqueeze(-1)
-        attention_spans = attention_spans - mask * 10000
+        attention_spans = attention_spans.masked_fill(mask, -10000)
         attention_weight_spans = torch.softmax(attention_spans, dim=-2)
-        attention_weight_spans = attention_weight_spans - mask * attention_weight_spans
+        attention_weight_spans = attention_weight_spans.masked_fill(mask, 0)
         # compute weighted sum of sequence spans and attention weights
         pooled = (sequence_spans * attention_weight_spans).sum(-2)
-
         # return pooled tensors
         return pooled
 

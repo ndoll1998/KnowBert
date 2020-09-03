@@ -1,6 +1,6 @@
 import torch
 import transformers
-from kb.model import KnowBert, KnowBertForPretraining
+from kb.model import KnowBertModel, KnowBertForPretraining
 from kb.knowledge import KnowledgeBase
 
 class TestKB(KnowledgeBase):
@@ -35,7 +35,7 @@ sampleA = "This is a nice coffee spot and the food was tasty too!"
 sampleB = "I do not like this place very much!"
 
 # create bert model
-bert = KnowBert.from_pretrained("bert-base-uncased")
+bert = KnowBertModel.from_pretrained("bert-base-uncased")
 # add knowledge base
 kb_A = bert.add_kb(3, TestKB())
 kb_B = bert.add_kb(2, TestKB())

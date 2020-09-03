@@ -181,7 +181,7 @@ if __name__ == '__main__':
     import os
     from glob import glob
     # import model and tokenizer
-    from kb.model import KnowBert, BertConfig
+    from kb.model import KnowBertModel, BertConfig
     from transformers import BertTokenizer
     # import knowledge bases
     from knowledgeBases.senticnet.kb import SenticNet
@@ -202,7 +202,7 @@ if __name__ == '__main__':
 
     # create model - only needed to create caches for the knowledge bases
     config = BertConfig.from_pretrained(bert_base_model)
-    model = KnowBert(config)
+    model = KnowBertModel(config)
     # add knowledge bases
     model.add_kb(10, SenticNet(data_path='./data/senticnet/english', mode='prepare'))
 

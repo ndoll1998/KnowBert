@@ -15,7 +15,7 @@ class KnowledgeBase(ABC):
     def config(self) -> dict:
         """ Get the configuration of the knowledge base. """
         return {
-            'type': KnowledgeBaseManager.instance.get_name_from_type(self.__class__), 
+            'type': KnowledgeBaseRegistry.instance.get_name_from_type(self.__class__), 
             'embedd_dim': self.embedd_dim, 
             'pad_id': self.pad_id
         }
@@ -56,19 +56,19 @@ class KnowledgeBase(ABC):
 
 
 
-class __KnowledgeBaseManagerType(type):
+class __KnowledgeBaseRegistryType(type):
     """ Singleton Meta Class """
 
     @property
     def instance(self):
-        return KnowledgeBaseManager.get_instance()
+        return KnowledgeBaseRegistry.get_instance()
 
     def __call__(self):
-        return KnowledgeBaseManager.get_instance()
+        return KnowledgeBaseRegistry.get_instance()
 
 
-class KnowledgeBaseManager(metaclass=__KnowledgeBaseManagerType):
-    """ Singleton Manager to manage all Knowledge Base types """
+class KnowledgeBaseRegistry(metaclass=__KnowledgeBaseRegistryType):
+    """ Singleton Registry to manage all Knowledge Base types """
 
     __instance = None
 
@@ -80,14 +80,14 @@ class KnowledgeBaseManager(metaclass=__KnowledgeBaseManagerType):
     @staticmethod
     def get_instance():
         # only initialize once
-        if KnowledgeBaseManager.__instance is None:
-            KnowledgeBaseManager.__instance = object.__new__(KnowledgeBaseManager)
-            KnowledgeBaseManager.__instance.__init__()
+        if KnowledgeBaseRegistry.__instance is None:
+            KnowledgeBaseRegistry.__instance = object.__new__(KnowledgeBaseRegistry)
+            KnowledgeBaseRegistry.__instance.__init__()
         # return instance
-        return KnowledgeBaseManager.__instance
+        return KnowledgeBaseRegistry.__instance
 
     def register(self, name:str):
-        """ Decorator function to register knowledge base types to the manager """
+        """ Decorator function to register knowledge base types to the registry """
         # check if name is already in use
         if name in self.name2type:
             raise RuntimeError("Name %s is already used by %s!" % (name, self.name2type[name]))
