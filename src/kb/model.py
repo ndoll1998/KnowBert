@@ -8,6 +8,7 @@ from transformers import BertModel
 from transformers.modeling_bert import (
     BertForPreTraining, 
     BertForSequenceClassification,
+    BertForTokenClassification,
     BertPreTrainingHeads, BertEmbeddings, BertEncoder, BertPooler
 )
 # import configuration
@@ -389,6 +390,27 @@ class KnowBertForSequenceClassification(KnowBertHelper, BertForSequenceClassific
     def __init__(self, config):
         # initialize super class
         super(BertForSequenceClassification, self).__init__(config)
+        self.num_labels = config.num_labels
+        # create model
+        self.bert = KnowBertModel(config)
+        self.dropout = nn.Dropout(config.hidden_dropout_prob)
+        self.classifier = nn.Linear(config.hidden_size, config.num_labels)
+        # initialize weights
+        self.init_weights()
+
+        # initialize helper
+        KnowBertHelper.__init__(self, self.bert.encoder)
+
+
+class KnowBertForTokenClassification(KnowBertHelper, BertForTokenClassification):
+    """ KnowBert for Token Classification """
+
+    # set configuration class
+    config_class = KnowBertConfig
+
+    def __init__(self, config):
+        # initialize super class
+        super(BertForTokenClassification, self).__init__(config)
         self.num_labels = config.num_labels
         # create model
         self.bert = KnowBertModel(config)

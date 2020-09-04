@@ -58,9 +58,12 @@ class KnowBertConfig(BertConfig):
         # add knowledge base to config
         self.kbs[layer] = config
 
-    @staticmethod
-    def from_pretrained(pretrained_model_name_or_path:str, **kwargs):
+    @classmethod
+    def from_pretrained(cls, pretrained_model_name_or_path:str, **kwargs):
+        # check class
+        if not issubclass(cls, KnowBertConfig):
+            raise RuntimeError("Knowbert Configuration must inhert KnowBertConfig! (Got %s)" % cls.__name__)
         # create configuration from model name or path
-        config_dict, kwargs = KnowBertConfig.get_config_dict(pretrained_model_name_or_path, **kwargs)
+        config_dict, kwargs = cls.get_config_dict(pretrained_model_name_or_path, **kwargs)
         kwargs.update({'pretrained_model_name_or_path': pretrained_model_name_or_path})
-        return KnowBertConfig.from_dict(config_dict, **kwargs)
+        return cls.from_dict(config_dict, **kwargs)
