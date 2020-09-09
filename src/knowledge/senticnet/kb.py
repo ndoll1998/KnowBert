@@ -67,8 +67,12 @@ class SenticNet(KnowledgeBase):
     def find_token_mentions(self, wordpiece_tokens):
         # reconstruct text and find tokens
         text, spans = reconstruct_from_wordpieces(wordpiece_tokens)
-        concept_matches = re.finditer('(\w)+', text.lower())
-        concept_terms, concept_spans = zip(*[(m.group(), (m.start(), m.end())) for m in concept_matches if m.group() not in self.sw]) 
+        concept_matches = [m for m in re.finditer('(\w)+', text.lower()) if m.group() not in self.sw]
+        # check for concepts candidates
+        if len(concept_matches) == 0:
+            return {}
+        # get concept-terms and spans
+        concept_terms, concept_spans = zip(*[(m.group(), (m.start(), m.end())) for m in concept_matches]) 
         # get concept-nodes from senticnet-parser
         concept_nodes = [self.graph.get_concept(term) for term in concept_terms]
         # select all concepts contained in senticnet
